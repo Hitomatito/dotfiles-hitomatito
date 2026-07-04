@@ -4,7 +4,7 @@ notify-send "Wi-Fi" "Scanning for networks..." -t 2000
 
 # Get list of networks (SSID and Security)
 # We sort them by signal strength implicitly (nmcli does this) and remove duplicates
-networks=$(nmcli --get-values SSID,SECURITY dev wifi list | grep -v '^\s*$' | awk -F':' '!seen[$1]++ {print $1}')
+networks=$(nmcli --get-values IN-USE,SSID dev wifi list | awk -F':' '{if($2!="" && !seen[$2]++) { if($1=="*") print $2" (connected)"; else print $2 } }')
 
 if [ -z "$networks" ]; then
     notify-send "Wi-Fi" "No networks found or Wi-Fi is disabled."
@@ -12,11 +12,15 @@ if [ -z "$networks" ]; then
 fi
 
 # Show menu
-chosen_network=$(echo "$networks" | tofi --prompt-text "Wi-Fi: ")
+chosen=$(echo "$networks" | tofi --prompt-text "Wi-Fi: ")
 
-if [ -z "$chosen_network" ]; then
+if [ -z "$chosen" ]; then
     exit 0
 fi
+
+# Strip " (connected)" if present
+chosen_network="${chosen% (connected)}"
+
 
 # Check if it's a known connection
 known=$(nmcli connection show | grep -w "$chosen_network")
