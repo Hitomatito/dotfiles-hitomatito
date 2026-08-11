@@ -4,6 +4,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import Qt.labs.platform
 
 PanelWindow {
     id: rootWindow
@@ -11,6 +12,9 @@ PanelWindow {
     property bool show: false
     property var shellRoot
     property var themes: []
+    // Home real del usuario (los dotfiles funcionan para cualquier usuario)
+    property string userHome: String(StandardPaths.writableLocation(StandardPaths.HomeLocation)).replace(/^file:\/\//, "")
+    property string userConfig: String(StandardPaths.writableLocation(StandardPaths.ConfigLocation)).replace(/^file:\/\//, "")
     property real animHeight: animRect.height
     
     WlrLayershell.keyboardFocus: show ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
@@ -132,7 +136,7 @@ PanelWindow {
                     Keys.onReturnPressed: {
                         if (listView.currentIndex >= 0 && listView.currentIndex < themeModel.count) {
                             var t = themeModel.get(listView.currentIndex).name;
-                            pExec.command = ["/home/james/.config/hypr/scripts/switch_theme.sh", t];
+                            pExec.command = [userConfig + "/hypr/scripts/switch_theme.sh", t];
                             pExec.running = true;
                             show = false;
                         }
@@ -173,7 +177,7 @@ PanelWindow {
                             hoverEnabled: true
                             onClicked: {
                                 listView.currentIndex = index;
-                                pExec.command = ["/home/james/.config/hypr/scripts/switch_theme.sh", model.name];
+                                pExec.command = [userConfig + "/hypr/scripts/switch_theme.sh", model.name];
                                 pExec.running = true;
                                 rootWindow.show = false;
                             }

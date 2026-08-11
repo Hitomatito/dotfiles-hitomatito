@@ -4,5 +4,5 @@ if pgrep -x "quickshell" > /dev/null; then
     quickshell ipc call qsIpc togglePowerMenu
 else
     # Battery Mode: Fallback to Tofi/Legacy
-    /home/james/.config/tofi/powermenu.sh
+    "$HOME/.config/tofi/powermenu.sh"
 fi

@@ -4,6 +4,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import Qt.labs.platform
 
 PanelWindow {
     id: rootWindow
@@ -11,6 +12,9 @@ PanelWindow {
     property bool show: false
     property var shellRoot
     property var allApps: []
+    // Home real del usuario (los dotfiles funcionan para cualquier usuario)
+    property string userHome: String(StandardPaths.writableLocation(StandardPaths.HomeLocation)).replace(/^file:\/\//, "")
+    property string userConfig: String(StandardPaths.writableLocation(StandardPaths.ConfigLocation)).replace(/^file:\/\//, "")
     property real animHeight: animRect.height
     
     WlrLayershell.keyboardFocus: show ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
@@ -58,7 +62,7 @@ PanelWindow {
     
     Process {
         id: pGetApps
-        command: ["python3", "/home/james/.config/quickshell/get_apps.py"]
+        command: ["python3", userConfig + "/quickshell/get_apps.py"]
         stdout: SplitParser {
 
             onRead: data => {
@@ -134,7 +138,7 @@ PanelWindow {
                         if (listView.currentIndex >= 0 && listView.currentIndex < appModel.count) {
                             var app = appModel.get(listView.currentIndex);
                             pExec.running = false;
-                            pExec.command = ["/home/james/.config/quickshell/launch_app.sh", app.cmd];
+                            pExec.command = [userConfig + "/quickshell/launch_app.sh", app.cmd];
                             pExec.running = true;
                             show = false;
                         }
@@ -176,7 +180,7 @@ PanelWindow {
                             onClicked: {
                                 listView.currentIndex = index;
                                 pExec.running = false;
-                                pExec.command = ["/home/james/.config/quickshell/launch_app.sh", model.cmd];
+                                pExec.command = [userConfig + "/quickshell/launch_app.sh", model.cmd];
                                 pExec.running = true;
                                 rootWindow.show = false;
                             }

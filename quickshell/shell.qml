@@ -5,6 +5,7 @@ import Quickshell.Hyprland
 import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell.Io
+import Qt.labs.platform
 
 ShellRoot {
     PanelWindow {
@@ -18,6 +19,9 @@ ShellRoot {
     property color colCrit: "#ff0000"
     property string fontFamily: "JetBrainsMono Nerd Font"
     property int fontSize: 10 // Reduced font size to match waybar 9px
+    // Home real del usuario (los dotfiles funcionan para cualquier usuario)
+    property string userHome: String(StandardPaths.writableLocation(StandardPaths.HomeLocation)).replace(/^file:\/\//, "")
+    property string userConfig: String(StandardPaths.writableLocation(StandardPaths.ConfigLocation)).replace(/^file:\/\//, "")
     property int windowCount: 0
     property bool isBarMode: windowCount === 1
     property real notchWidth: notchLayout.implicitWidth
@@ -26,7 +30,7 @@ ShellRoot {
     property bool isAnyPopupAnimActive: isAnyPopupOpen || controlCenter.animHeight > 36 || appLauncherPopup.animHeight > 36 || clipboardManagerPopup.animHeight > 36 || themeSwitcherPopup.animHeight > 36 || wifiMenuPopup.animHeight > 36 || powerMenuPopup.animHeight > 36 || bluetoothMenuPopup.animHeight > 36
 
     Process {
-        command: ["/home/james/.config/quickshell/count_tiled.sh"]
+        command: [userConfig + "/quickshell/count_tiled.sh"]
         running: true
         stdout: SplitParser {
             onRead: data => {
@@ -136,13 +140,13 @@ ShellRoot {
     Process { id: pBtOff; command: ["rfkill", "block", "bluetooth"] }
     Process {
         id: pCheckBatteryMode
-        command: ["sh", "-c", "grep -q '^#animations' /home/james/.config/hypr/modules/look_and_feel.conf && echo 'false' || echo 'true'"]
+        command: ["sh", "-c", "grep -q '^#animations' $HOME/.config/hypr/modules/look_and_feel.conf && echo 'false' || echo 'true'"]
         running: true
         stdout: SplitParser { onRead: data => { root.batteryMode = (data.trim() === 'true'); } }
     }
     Process {
         id: pToggleBatteryMode
-        command: ["/home/james/.local/bin/battery_mode.sh"]
+        command: [userHome + "/.local/bin/battery_mode.sh"]
     }
 
     Process { id: pSpotPrev; command: ["playerctl", "--player=spotify", "previous"] }
@@ -223,15 +227,15 @@ ShellRoot {
     Process { id: pGpuInt; command: ["sh", "-c", "supergfxctl -m Integrated; hyprctl dispatch \"hl.dsp.exit()\""] }
     Process { id: pGpuHyb; command: ["sh", "-c", "supergfxctl -m Hybrid; hyprctl dispatch \"hl.dsp.exit()\""] }
     
-    Process { id: pNoteHyprland; command: ["zeditor", "/home/james/.config/hypr"] }
-    Process { id: pNoteWaybar; command: ["zeditor", "/home/james/.config/waybar/"] }
-    Process { id: pNoteTofi; command: ["zeditor", "/home/james/.config/tofi/"] }
-    Process { id: pNoteKitty; command: ["zeditor", "/home/james/.config/kitty"] }
-    Process { id: pNoteFoot; command: ["zeditor", "/home/james/.config/foot"] }
-    Process { id: pNoteGhostty; command: ["zeditor", "/home/james/.config/ghostty"] }
-    Process { id: pNoteFish; command: ["zeditor", "/home/james/.config/fish"] }
-    Process { id: pNoteFastfetch; command: ["zeditor", "/home/james/.config/fastfetch"] }
-    Process { id: pNoteQuickshell; command: ["zeditor", "/home/james/.config/quickshell"] }
+    Process { id: pNoteHyprland; command: ["zeditor", userConfig + "/hypr"] }
+    Process { id: pNoteWaybar; command: ["zeditor", userConfig + "/waybar/"] }
+    Process { id: pNoteTofi; command: ["zeditor", userConfig + "/tofi/"] }
+    Process { id: pNoteKitty; command: ["zeditor", userConfig + "/kitty"] }
+    Process { id: pNoteFoot; command: ["zeditor", userConfig + "/foot"] }
+    Process { id: pNoteGhostty; command: ["zeditor", userConfig + "/ghostty"] }
+    Process { id: pNoteFish; command: ["zeditor", userConfig + "/fish"] }
+    Process { id: pNoteFastfetch; command: ["zeditor", userConfig + "/fastfetch"] }
+    Process { id: pNoteQuickshell; command: ["zeditor", userConfig + "/quickshell"] }
 
     
 
