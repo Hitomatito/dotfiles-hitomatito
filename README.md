@@ -88,7 +88,7 @@ You can change the theme on the fly using the built-in script:
 ├── fish/         # Fish shell config and functions
 ├── foot/         # Foot terminal config
 ├── ghostty/      # Ghostty terminal config
-├── hypr/         # Hyprland configs, modules, themes, and scripts
+├── hypr/         # Hyprland Lua config, lock/paper/sunset configs, themes, and scripts
 ├── kitty/        # Kitty terminal config
 ├── nano/         # Nano editor config
 ├── preview/      # UI screenshots and previews
@@ -101,7 +101,7 @@ You can change the theme on the fly using the built-in script:
 *(Assuming Arch Linux / Pacman-based distribution)*
 
 1. Ensure the core packages are installed (Hyprland, Quickshell, Fish, Tofi, Kitty, Fastfetch).
-2. Clone this repository into your `~/.config` or use the included `ricesync` script to sync the dotfiles.
+2. Clone this repository into your `~/.config`. Hyprland uses the Lua config (`hypr/hyprland.lua`).
 3. Reload Hyprland or log out and log back in.
 
 > **Note**: This config relies on certain system tools like `brightnessctl`, `playerctl`, `nmcli` (NetworkManager), `bluetoothctl`, and `wpctl` (WirePlumber). Make sure you have them installed for the Control Center to function fully.
