@@ -7,7 +7,7 @@ sleep 2
 hyprctl keyword windowrule "match:class zen, workspace special:zenbg silent"
 
 # Start Zen Browser in the background
-zen-browser &
+flatpak run app.zen_browser.zen &
 
 # Wait for the browser to fully launch and map its initial windows
 sleep 5

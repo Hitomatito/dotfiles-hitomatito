@@ -10,7 +10,7 @@ hl.on("hyprland.start", function ()
   })
 
   hl.timer(function()
-      hl.exec_cmd("zen-browser")
+      hl.exec_cmd(programs.browser)
       hl.timer(function()
           zenBgRule:set_enabled(false)
       end, { timeout = 5000, type = "oneshot" })
