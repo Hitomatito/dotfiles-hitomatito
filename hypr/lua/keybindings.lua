@@ -26,33 +26,6 @@ hl.bind(mainMod .. " + F12", hl.dsp.exec_cmd(p.lock))
 hl.bind(mainMod .. " + SHIFT + F12", hl.dsp.exec_cmd("brightnessctl s 0"))
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(p.smartTheme))
 hl.bind("mouse:277", hl.dsp.window.close())
-local battery_mode = false
-hl.bind(mainMod .. " + B", function()
-    battery_mode = not battery_mode
-    if battery_mode then
-        -- Power saving mode
-        hl.config({
-            animations = { enabled = false },
-            decoration = {
-                rounding = 0,
-                shadow = { enabled = false },
-                blur = { enabled = false }
-            }
-        })
-    else
-        -- High performance mode (restoring from theme)
-        local theme = require("theme")
-        hl.config({
-            animations = { enabled = true },
-            decoration = {
-                rounding = theme.rounding,
-                shadow = { enabled = theme.shadow_enabled },
-                blur = { enabled = theme.blur_enabled }
-            }
-        })
-    end
-    hl.exec_cmd(p.batteryMode)
-end)
 
 -- Workspace Packing (SUPER+A)
 hl.bind(mainMod .. " + A", function()

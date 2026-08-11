@@ -6,14 +6,13 @@
   "reload_style_on_change": true,
   "modules-left": ["group/stats", "group/spotify"],
   "modules-center": ["hyprland/workspaces"],
-  "modules-right": ["battery", "group/tools"],
+  "modules-right": ["group/tools"],
 
   "group/stats": {
     "orientation": "inherit",
     "drawer": { "transition-duration": 300, "transition-left-to-right": false },
     "modules": [
       "custom/arrow-right",
-      "custom/power_draw",
       "temperature",
       "custom/updates",
       "custom/notes"
@@ -25,7 +24,6 @@
     "drawer": { "transition-duration": 300, "transition-right-to-left": false },
     "modules": [
       "custom/arrow-left",
-      "custom/gpu",
       "pulseaudio",
       "pulseaudio#microphone",
       "bluetooth",
@@ -81,18 +79,6 @@
     "on-scroll-down": "brightnessctl set 5%-",
     "on-click": "brightnessctl set 100%",
     "on-click-right": "brightnessctl set 30%"
-  },
-
-  "battery": {
-    "bat": "BAT1",
-    "interval": 60,
-    "states": {
-      "warning": 30,
-      "critical": 15
-    },
-    "format": "{capacity}",
-    "format-charging": "+{capacity}",
-    "format-plugged": " "
   },
 
   "network": {
@@ -161,25 +147,6 @@
       "Fish": "zeditor .config/fish",
       "Fastfetch": "zeditor .config/fastfetch",
     }
-  },
-
-  "custom/gpu": {
-    "exec": "supergfxctl -g",
-    "format": "󰢮 {}",
-    "tooltip": "GPU Mode",
-    "menu": "on-click",
-    "menu-file": "~/.config/waybar/gpu_menu.xml",
-    "menu-actions": {
-      "Integrated": "bash -c 'supergfxctl -m Integrated ; hyprctl dispatch \"hl.dsp.exit()\"'",
-      "Hybrid": "bash -c 'supergfxctl -m Hybrid ; hyprctl dispatch \"hl.dsp.exit()\"'"
-    }
-  },
-
-  "custom/power_draw": {
-    "format": " 󱐋 {}W",
-    "interval": 10,
-    "exec": "awk '{line[NR]=$1} END {printf \"%.1f\\n\", (line[1] * line[2]) / 1000000000000}' /sys/class/power_supply/BAT1/current_now /sys/class/power_supply/BAT1/voltage_now 2>/dev/null",
-    "tooltip": false
   },
 
   "group/spotify": {

@@ -47,35 +47,17 @@ ShellRoot {
     color: "transparent"
 
     // State properties
-    property string powerDraw: "0.0"
     property string temperature: "0"
     property string updates: "0"
-    property string batteryCap: "100"
     property string brightnessLevel: "0%"
-    property string kbdBrightnessLevel: "0"
-    property int cpuWattage: 15
-    property bool batteryCharging: false
-    property string gpuMode: "Unknown"
-    property int batLimit: 80
     property string volumeOut: "0%"
     property bool volumeMuted: false
     property string volumeMic: "0%"
     property bool micMuted: false
     property string bluetoothStatus: "off"
+    // Mantenido solo por compatibilidad con las animaciones de los popups
+    // (el modo bateria se elimino: dotfiles genericos para PC y portatil)
     property bool batteryMode: false
-    property bool showBatteryModeIndicator: false
-    
-    onBatteryModeChanged: {
-        showBatteryModeIndicator = true;
-        batteryModeTimer.restart();
-    }
-    
-    Timer {
-        id: batteryModeTimer
-        interval: 1000
-        repeat: false
-        onTriggered: root.showBatteryModeIndicator = false
-    }
 
     property bool showMicIndicator: false
     
@@ -129,7 +111,6 @@ ShellRoot {
     Process { id: pMicMute; command: ["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"] }
     Process { id: pVolMute; command: ["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"] }
     Process { id: pVolSet } // Dynamic volume setter
-    Process { id: pBatLimitSet }
     Process { id: pBlueberry; command: ["blueberry"] }
 
     Process { id: pWifiToggle; command: ["sh", "-c", "if [ \"$(nmcli radio wifi)\" = \"enabled\" ]; then nmcli radio wifi off; else nmcli radio wifi on; fi"] }
@@ -138,16 +119,6 @@ ShellRoot {
     Process { id: pWifiOff; command: ["nmcli", "radio", "wifi", "off"] }
     Process { id: pBtOn; command: ["rfkill", "unblock", "bluetooth"] }
     Process { id: pBtOff; command: ["rfkill", "block", "bluetooth"] }
-    Process {
-        id: pCheckBatteryMode
-        command: ["sh", "-c", "grep -q '^#animations' $HOME/.config/hypr/modules/look_and_feel.conf && echo 'false' || echo 'true'"]
-        running: true
-        stdout: SplitParser { onRead: data => { root.batteryMode = (data.trim() === 'true'); } }
-    }
-    Process {
-        id: pToggleBatteryMode
-        command: [userHome + "/.local/bin/battery_mode.sh"]
-    }
 
     Process { id: pSpotPrev; command: ["playerctl", "--player=spotify", "previous"] }
 
@@ -216,16 +187,8 @@ ShellRoot {
         command: ["brightnessctl", "s", "50%"]
     }
 
-    Process { id: pKbdBrightSet }
-
-    Process { id: pWattSet }
-
     Process { id: pSpotPlay; command: ["playerctl", "--player=spotify", "play-pause"] }
     Process { id: pSpotNext; command: ["playerctl", "--player=spotify", "next"] }
-    Process { id: pGpu; command: ["sh", "-c", "supergfxctl -m Hybrid; hyprctl dispatch \"hl.dsp.exit()\""] }
-
-    Process { id: pGpuInt; command: ["sh", "-c", "supergfxctl -m Integrated; hyprctl dispatch \"hl.dsp.exit()\""] }
-    Process { id: pGpuHyb; command: ["sh", "-c", "supergfxctl -m Hybrid; hyprctl dispatch \"hl.dsp.exit()\""] }
     
     Process { id: pNoteHyprland; command: ["zeditor", userConfig + "/hypr"] }
     Process { id: pNoteWaybar; command: ["zeditor", userConfig + "/waybar/"] }
@@ -241,51 +204,12 @@ ShellRoot {
 
     // Background Process Loops
     Process {
-        command: ["sh", "-c", "while true; do awk '{line[NR]=$1} END {printf \"%.1f\", (line[1] * line[2]) / 1000000000000}' /sys/class/power_supply/BAT1/current_now /sys/class/power_supply/BAT1/voltage_now 2>/dev/null || echo '0.0'; echo; sleep 3; done"]
-        running: true; stdout: SplitParser { onRead: data => root.powerDraw = data.trim() }
-    }
-    Process {
         command: ["sh", "-c", "while true; do temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0); echo $((temp / 1000)); sleep 3; done"]
         running: true; stdout: SplitParser { onRead: data => root.temperature = data.trim() }
     }
     Process {
         command: ["sh", "-c", "while true; do checkupdates 2>/dev/null | wc -l; sleep 3600; done"]
         running: true; stdout: SplitParser { onRead: data => root.updates = data.trim() }
-    }
-    Process {
-        command: ["sh", "-c", "while true; do cap=$(cat /sys/class/power_supply/BAT1/capacity 2>/dev/null || echo 0); acad=$(cat /sys/class/power_supply/ACAD/online 2>/dev/null || echo 0); echo \"$cap $acad\"; sleep 5; done"]
-        running: true; stdout: SplitParser { 
-            onRead: data => {
-                var parts = data.trim().split(" ");
-                root.batteryCap = parts[0];
-                root.batteryCharging = (parts[1] === "1");
-            }
-        }
-    }
-    Process {
-        command: ["sh", "-c", "while true; do asusctl battery info 2>/dev/null; sleep 10; done"]
-        running: true; stdout: SplitParser { 
-            onRead: data => {
-                var d = data.trim();
-                if (d.includes("Current battery charge limit:")) {
-                    var m = d.match(/(\d+)%/);
-                    if (m) root.batLimit = parseInt(m[1]);
-                }
-            }
-        }
-    }
-    Process {
-        command: ["sh", "-c", "while true; do sudo ryzenadj -i 2>/dev/null | awk -F'|' '/STAPM LIMIT/ {print int($3)}'; sleep 10; done"]
-        running: true; stdout: SplitParser { 
-            onRead: data => {
-                var d = parseInt(data.trim());
-                if (!isNaN(d) && d > 0) root.cpuWattage = d;
-            }
-        }
-    }
-    Process {
-        command: ["sh", "-c", "while true; do supergfxctl -g 2>/dev/null || echo '?'; sleep 3; done"]
-        running: true; stdout: SplitParser { onRead: data => root.gpuMode = data.trim() }
     }
     Process {
         command: ["sh", "-c", "while true; do wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null; sleep 0.5; done"]
@@ -341,20 +265,6 @@ ShellRoot {
             }
         }
     }
-
-    Process {
-        command: ["sh", "-c", "while true; do asusctl leds get 2>/dev/null | awk '{print $NF}'; sleep 3; done"]
-        running: true; stdout: SplitParser { 
-            onRead: data => {
-                var d = data.trim().toLowerCase();
-                if (d === 'off') root.kbdBrightnessLevel = "0";
-                else if (d === 'low') root.kbdBrightnessLevel = "1";
-                else if (d === 'med') root.kbdBrightnessLevel = "2";
-                else if (d === 'high') root.kbdBrightnessLevel = "3";
-            }
-        }
-    }
-
 
     // A helper to make clickable modules easily
     component Mod: MouseArea {
@@ -454,31 +364,6 @@ ShellRoot {
                     onClicked: Hyprland.dispatch("workspace " + modelData)
                 }
             }
-            
-            Mod { 
-                property int cap: parseInt(root.batteryCap)
-                property bool isCrit: cap <= 15 && !root.batteryCharging
-                property bool isWarn: cap <= 30 && cap > 15 && !root.batteryCharging
-                
-                text: {
-                    if (root.batteryCharging) return "";
-                    if (cap > 80) return "";
-                    if (cap > 60) return "";
-                    if (cap > 40) return "";
-                    if (cap > 20) return "";
-                    return "";
-                }
-                textColor: {
-                    if (isCrit) return root.colCrit;
-                    if (isWarn) return "#FFA500";
-                    if (root.batteryCharging) return "#76B900";
-                    return root.colFg;
-                }
-                bgColor: "transparent"
-                blink: isCrit
-                show: !controlCenter.show && !root.showOsd
-                onClicked: controlCenter.show = true
-            }
 
             Mod {
                 property bool isActive: root.stopwatchRunning || root.stopwatchSeconds > 0
@@ -498,13 +383,6 @@ ShellRoot {
                 onClicked: controlCenter.show = true
             }
             
-            Mod {
-                text: root.batteryMode ? "  Power Saver" : "  Performance"
-                textColor: root.batteryMode ? "#FFCC00" : "#76B900"
-                bgColor: "transparent"
-                show: root.showBatteryModeIndicator && !controlCenter.show && !root.showOsd
-            }
-
             Mod {
                 text: ""
                 textColor: root.micMuted ? root.colMuted : "#FFA500"
@@ -828,7 +706,6 @@ ShellRoot {
             Keys.onEscapePressed: {
                 controlCenter.show = false;
                 timerPopup.show = false;
-                gpuPopup.show = false;
                 notesPopup.show = false;
             }
             
@@ -838,7 +715,6 @@ ShellRoot {
                 onClicked: {
                     controlCenter.show = false;
                     timerPopup.show = false;
-                    gpuPopup.show = false;
                     notesPopup.show = false;
                 }
             }
@@ -943,70 +819,14 @@ ShellRoot {
                         
                         Item { Layout.fillWidth: true }
                         
-                        // Battery Close Button
-                        MouseArea {
-                            property int cap: parseInt(root.batteryCap)
-                            property bool isCrit: cap <= 15 && !root.batteryCharging
-                            property bool isWarn: cap <= 30 && cap > 15 && !root.batteryCharging
+                        // System Stats (Moved under clock)
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
                             
-                            Layout.preferredHeight: 40
-                            Layout.preferredWidth: battLayout.implicitWidth + 24
-                            hoverEnabled: true
-                            onClicked: { controlCenter.show = false }
-                            
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 12
-                                color: parent.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.1)
-                                Behavior on color { ColorAnimation { duration: root.batteryMode ? 0 : 150 } }
-                            }
-                            
-                            RowLayout {
-                                id: battLayout
-                                anchors.centerIn: parent
-                                spacing: 10
-                                Text { 
-                                    text: {
-                                        let cap = parseInt(root.batteryCap);
-                                        if (root.batteryCharging) return "";
-                                        if (cap > 80) return "";
-                                        if (cap > 60) return "";
-                                        if (cap > 40) return "";
-                                        if (cap > 20) return "";
-                                        return "";
-                                    }
-                                    color: {
-                                        let cap = parseInt(root.batteryCap);
-                                        let isCrit = cap <= 15 && !root.batteryCharging;
-                                        let isWarn = cap <= 30 && cap > 15 && !root.batteryCharging;
-                                        return isCrit ? root.colCrit : (isWarn ? "#FFA500" : (root.batteryCharging ? "#76B900" : root.colFg));
-                                    }
-                                    font.family: root.fontFamily
-                                    font.pixelSize: 18 
-                                }
-                                Text { 
-                                    text: root.batteryCap + "%"
-                                    color: root.colFg
-                                    font.family: root.fontFamily
-                                    font.pixelSize: 14
-                                    font.bold: true 
-                                }
-                            }
-                            
-                            scale: containsPress ? 0.95 : 1.0
-                            Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 150; easing.type: Easing.OutBack } }
+                            Text { text: " " + root.temperature + "°"; color: parseInt(root.temperature) >= 80 ? root.colCrit : root.colMuted; font.family: root.fontFamily; font.pixelSize: 12; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter }
+                            Text { text: "󰮯 " + root.updates; color: root.colMuted; font.family: root.fontFamily; font.pixelSize: 12; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; visible: parseInt(root.updates) > 0 }
                         }
-                    }
-                    
-                    // System Stats (Moved under clock)
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        
-                        Text { text: "󱐋 " + root.powerDraw + "W"; color: root.colMuted; font.family: root.fontFamily; font.pixelSize: 12; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter }
-                        Text { text: " " + root.temperature + "°"; color: parseInt(root.temperature) >= 80 ? root.colCrit : root.colMuted; font.family: root.fontFamily; font.pixelSize: 12; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter }
-                        Text { text: "󰮯 " + root.updates; color: root.colMuted; font.family: root.fontFamily; font.pixelSize: 12; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; visible: parseInt(root.updates) > 0 }
-                    }
                     
                     Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.rgba(1,1,1,0.1) }
                     
@@ -1120,70 +940,6 @@ ShellRoot {
                             
                         }
 
-                        // Keyboard Brightness
-                        RowLayout {
-                            spacing: 8
-                            Text { text: "󰌌"; color: root.colFg; font.family: root.fontFamily; font.pixelSize: 18 }
-                            ModernSlider {
-                                value: parseInt(root.kbdBrightnessLevel) / 3.0
-                                stepSize: 1.0 / 3.0
-                                snapMode: Slider.SnapAlways
-                                onMoved: {
-                                    var levels = ["off", "low", "med", "high"];
-                                    var idx = Math.round(value * 3);
-                                    root.kbdBrightnessLevel = idx.toString();
-                                    pKbdBrightSet.command = ["asusctl", "leds", "set", levels[idx]];
-                                    pKbdBrightSet.running = true;
-                                }
-                            }
-                        }
-
-                        // Wattage
-                        RowLayout {
-                            spacing: 8
-                            Text { text: "󱐋"; color: root.colFg; font.family: root.fontFamily; font.pixelSize: 18 }
-                            ModernSlider {
-                                value: (root.cpuWattage - 3) / 42.0
-                                onMoved: {
-                                    var watts = Math.round(3 + value * 42)
-                                    root.cpuWattage = watts
-                                    pWattSet.command = ["setwatt", watts.toString()]
-                                    pWattSet.running = true
-                                }
-                            }
-                            Text { 
-                                text: root.cpuWattage + "W"
-                                color: root.colFg
-                                font.family: root.fontFamily
-                                font.pixelSize: 12
-                                Layout.minimumWidth: 24
-                                horizontalAlignment: Text.AlignRight
-                            }
-                        }
-
-                        // Battery Limit
-                        RowLayout {
-                            spacing: 8
-                            Text { text: "󰁹"; color: root.colFg; font.family: root.fontFamily; font.pixelSize: 18 }
-                            ModernSlider {
-                                value: (root.batLimit - 20) / 80.0
-                                onMoved: {
-                                    var limit = Math.round(20 + value * 80)
-                                    root.batLimit = limit
-                                    pBatLimitSet.command = ["asusctl", "battery", "limit", limit.toString()]
-                                    pBatLimitSet.running = true
-                                }
-                            }
-                            Text { 
-                                text: root.batLimit + "%"
-                                color: root.colFg
-                                font.family: root.fontFamily
-                                font.pixelSize: 12
-                                Layout.minimumWidth: 24
-                                horizontalAlignment: Text.AlignRight
-                            }
-                        }
-
                     }
                     
                     // Toggles Row 1
@@ -1276,7 +1032,6 @@ ShellRoot {
                             }
                             onRightIconClicked: {
                                 timerPopup.show = !timerPopup.show;
-                                gpuPopup.show = false;
                                 notesPopup.show = false;
                             }
                             onScrolled: angle => {
@@ -1295,32 +1050,16 @@ ShellRoot {
 
                     }
 
-                    // Toggles Row 2 (GPU, Configs, Power Saver)
+                    // Toggles Row 2 (Configs, Timer)
                     RowLayout {
                         spacing: 8
                         Layout.fillWidth: true
                         
                         ModernButton {
-                            id: btnGpu
-                            text: root.gpuMode.charAt(0)
-                            iconText: "󰢮"
-                            isActive: root.gpuMode === "Hybrid" || root.gpuMode === "Nvidia"
-                            accent: "#76B900"
-                            onClicked: { gpuPopup.show = !gpuPopup.show; notesPopup.show = false; timerPopup.show = false }
-                        }
-                        ModernButton {
                             id: btnNotes
                             text: ""
                             iconText: ""
-                            onClicked: { notesPopup.show = !notesPopup.show; gpuPopup.show = false; timerPopup.show = false }
-                        }
-                        ModernButton {
-                            id: btnBatteryMode
-                            text: ""
-                            iconText: root.batteryMode ? "" : ""
-                            isActive: root.batteryMode
-                            accent: "#FFCC00"
-                            onClicked: pToggleBatteryMode.running = true
+                            onClicked: { notesPopup.show = !notesPopup.show; timerPopup.show = false }
                         }
                         ModernButton {
                             id: btnPomodoro
@@ -1430,60 +1169,6 @@ ShellRoot {
                             timerPopup.show = false;
                         }
                     }
-                }
-            }
-        }
-    }
-
-    PopupWindow {
-        id: gpuPopup
-        anchor {
-            window: controlCenter
-            rect: Qt.rect(btnGpu.mapToItem(null, 0, 0).x, btnGpu.mapToItem(null, 0, 0).y, btnGpu.width, btnGpu.height)
-            edges: Edges.Left | Edges.Top
-            gravity: Edges.Left | Edges.Bottom
-        }
-        
-        property bool show: false
-        property real animHeight: animRect.height
-        visible: show || animRectGpu.opacity > 0
-        
-        implicitWidth: 200
-        implicitHeight: layoutGpu.implicitHeight + 32
-        color: "transparent"
-        
-        Item {
-            anchors.fill: parent
-            
-            Rectangle {
-                id: animRectGpu
-                anchors.fill: parent
-                
-                anchors.rightMargin: 12
-                
-                color: Qt.rgba(0.08, 0.08, 0.08, 0.95)
-                radius: 16
-                border.color: Qt.rgba(1, 1, 1, 0.1)
-                border.width: 1
-                
-                opacity: gpuPopup.show ? 1.0 : 0.0
-                scale: gpuPopup.show ? 1.0 : 0.95
-                x: gpuPopup.show ? 0 : 20
-                Behavior on opacity { NumberAnimation { duration: root.batteryMode ? 0 : 200 } }
-                Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 350; easing.type: Easing.OutBack } }
-                Behavior on x { NumberAnimation { duration: root.batteryMode ? 0 : 350; easing.type: Easing.OutBack } }
-                
-                ColumnLayout {
-                    id: layoutGpu
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.margins: 16
-                    spacing: 8
-                    
-                    
-                    ModernButton { text: "Integrated"; iconText: "󰍛"; onClicked: { pGpuInt.running = true; gpuPopup.show = false; controlCenter.show = false } }
-                    ModernButton { text: "Hybrid"; iconText: "󰢮"; onClicked: { pGpuHyb.running = true; gpuPopup.show = false; controlCenter.show = false } }
                 }
             }
         }
@@ -1624,9 +1309,6 @@ ShellRoot {
         }
         function toggleControlCenter() {
             controlCenter.show = !controlCenter.show;
-        }
-        function refreshBatteryMode() {
-            pCheckBatteryMode.running = true;
         }
     }
 
