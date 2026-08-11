@@ -20,7 +20,7 @@ enable_battery() {
     echo "Enabling Battery Savings (120Hz VRR + No Effects)..."
     sed -i "/$START/,/$END/ { /$START/! { /$END/! s/^#[[:space:]]*// } }" "$CONFIG"
     hyprctl keyword monitor "$MONITOR,$RES@120,$POS,$SCALE,vrr,1"
-    /home/matteo/.config/hypr/scripts/switch_theme.sh black
+    /home/james/.config/hypr/scripts/switch_theme.sh black
     sleep 0.5
     
     hyprctl eval 'hl.config({ animations = { enabled = false }, decoration = { rounding = 0, shadow = { enabled = false }, blur = { enabled = false } } })'
@@ -38,7 +38,7 @@ disable_battery() {
     sed -i "/$START/,/$END/ { /$START/! { /$END/! { /^[[:space:]]*#/! s/^/#/ } } }" "$CONFIG"
     hyprctl keyword monitor "$MONITOR,$RES@120,$POS,$SCALE,vrr,1"
     
-    /home/matteo/.config/hypr/scripts/switch_theme.sh minimal
+    /home/james/.config/hypr/scripts/switch_theme.sh minimal
     sleep 0.5
     
     hyprctl eval '

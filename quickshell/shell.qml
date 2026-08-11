@@ -26,7 +26,7 @@ ShellRoot {
     property bool isAnyPopupAnimActive: isAnyPopupOpen || controlCenter.animHeight > 36 || appLauncherPopup.animHeight > 36 || clipboardManagerPopup.animHeight > 36 || themeSwitcherPopup.animHeight > 36 || wifiMenuPopup.animHeight > 36 || powerMenuPopup.animHeight > 36 || bluetoothMenuPopup.animHeight > 36
 
     Process {
-        command: ["/home/matteo/.config/quickshell/count_tiled.sh"]
+        command: ["/home/james/.config/quickshell/count_tiled.sh"]
         running: true
         stdout: SplitParser {
             onRead: data => {
@@ -136,13 +136,13 @@ ShellRoot {
     Process { id: pBtOff; command: ["rfkill", "block", "bluetooth"] }
     Process {
         id: pCheckBatteryMode
-        command: ["sh", "-c", "grep -q '^#animations' /home/matteo/.config/hypr/modules/look_and_feel.conf && echo 'false' || echo 'true'"]
+        command: ["sh", "-c", "grep -q '^#animations' /home/james/.config/hypr/modules/look_and_feel.conf && echo 'false' || echo 'true'"]
         running: true
         stdout: SplitParser { onRead: data => { root.batteryMode = (data.trim() === 'true'); } }
     }
     Process {
         id: pToggleBatteryMode
-        command: ["/home/matteo/.local/bin/battery_mode.sh"]
+        command: ["/home/james/.local/bin/battery_mode.sh"]
     }
 
     Process { id: pSpotPrev; command: ["playerctl", "--player=spotify", "previous"] }
@@ -223,15 +223,15 @@ ShellRoot {
     Process { id: pGpuInt; command: ["sh", "-c", "supergfxctl -m Integrated; hyprctl dispatch \"hl.dsp.exit()\""] }
     Process { id: pGpuHyb; command: ["sh", "-c", "supergfxctl -m Hybrid; hyprctl dispatch \"hl.dsp.exit()\""] }
     
-    Process { id: pNoteHyprland; command: ["zeditor", "/home/matteo/.config/hypr"] }
-    Process { id: pNoteWaybar; command: ["zeditor", "/home/matteo/.config/waybar/"] }
-    Process { id: pNoteTofi; command: ["zeditor", "/home/matteo/.config/tofi/"] }
-    Process { id: pNoteKitty; command: ["zeditor", "/home/matteo/.config/kitty"] }
-    Process { id: pNoteFoot; command: ["zeditor", "/home/matteo/.config/foot"] }
-    Process { id: pNoteGhostty; command: ["zeditor", "/home/matteo/.config/ghostty"] }
-    Process { id: pNoteFish; command: ["zeditor", "/home/matteo/.config/fish"] }
-    Process { id: pNoteFastfetch; command: ["zeditor", "/home/matteo/.config/fastfetch"] }
-    Process { id: pNoteQuickshell; command: ["zeditor", "/home/matteo/.config/quickshell"] }
+    Process { id: pNoteHyprland; command: ["zeditor", "/home/james/.config/hypr"] }
+    Process { id: pNoteWaybar; command: ["zeditor", "/home/james/.config/waybar/"] }
+    Process { id: pNoteTofi; command: ["zeditor", "/home/james/.config/tofi/"] }
+    Process { id: pNoteKitty; command: ["zeditor", "/home/james/.config/kitty"] }
+    Process { id: pNoteFoot; command: ["zeditor", "/home/james/.config/foot"] }
+    Process { id: pNoteGhostty; command: ["zeditor", "/home/james/.config/ghostty"] }
+    Process { id: pNoteFish; command: ["zeditor", "/home/james/.config/fish"] }
+    Process { id: pNoteFastfetch; command: ["zeditor", "/home/james/.config/fastfetch"] }
+    Process { id: pNoteQuickshell; command: ["zeditor", "/home/james/.config/quickshell"] }
 
     
 

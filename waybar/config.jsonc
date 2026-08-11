@@ -225,7 +225,7 @@
       "exec": "playerctl --player=spotify metadata --format '{{title}} - {{artist}}' 2>/dev/null",
       "exec-if": "pgrep spotify",
       "interval": 2,
-      "on-click": "bash -c '/home/matteo/.config/waybar/spotify_restart.sh'",
+      "on-click": "bash -c '/home/james/.config/waybar/spotify_restart.sh'",
       "tooltip": false
     }
 

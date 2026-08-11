@@ -40,4 +40,4 @@ abbr -a gp 'git push'
 
 
 # Added by Antigravity CLI installer
-set -gx PATH "/home/matteo/.local/bin" $PATH
+set -gx PATH "/home/james/.local/bin" $PATH

@@ -132,7 +132,7 @@ PanelWindow {
                     Keys.onReturnPressed: {
                         if (listView.currentIndex >= 0 && listView.currentIndex < themeModel.count) {
                             var t = themeModel.get(listView.currentIndex).name;
-                            pExec.command = ["/home/matteo/.config/hypr/scripts/switch_theme.sh", t];
+                            pExec.command = ["/home/james/.config/hypr/scripts/switch_theme.sh", t];
                             pExec.running = true;
                             show = false;
                         }
@@ -173,7 +173,7 @@ PanelWindow {
                             hoverEnabled: true
                             onClicked: {
                                 listView.currentIndex = index;
-                                pExec.command = ["/home/matteo/.config/hypr/scripts/switch_theme.sh", model.name];
+                                pExec.command = ["/home/james/.config/hypr/scripts/switch_theme.sh", model.name];
                                 pExec.running = true;
                                 rootWindow.show = false;
                             }

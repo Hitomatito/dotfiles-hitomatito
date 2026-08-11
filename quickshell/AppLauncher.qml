@@ -58,7 +58,7 @@ PanelWindow {
     
     Process {
         id: pGetApps
-        command: ["python3", "/home/matteo/.config/quickshell/get_apps.py"]
+        command: ["python3", "/home/james/.config/quickshell/get_apps.py"]
         stdout: SplitParser {
 
             onRead: data => {
@@ -134,7 +134,7 @@ PanelWindow {
                         if (listView.currentIndex >= 0 && listView.currentIndex < appModel.count) {
                             var app = appModel.get(listView.currentIndex);
                             pExec.running = false;
-                            pExec.command = ["/home/matteo/.config/quickshell/launch_app.sh", app.cmd];
+                            pExec.command = ["/home/james/.config/quickshell/launch_app.sh", app.cmd];
                             pExec.running = true;
                             show = false;
                         }
@@ -176,7 +176,7 @@ PanelWindow {
                             onClicked: {
                                 listView.currentIndex = index;
                                 pExec.running = false;
-                                pExec.command = ["/home/matteo/.config/quickshell/launch_app.sh", model.cmd];
+                                pExec.command = ["/home/james/.config/quickshell/launch_app.sh", model.cmd];
                                 pExec.running = true;
                                 rootWindow.show = false;
                             }
