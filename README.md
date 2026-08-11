@@ -97,10 +97,39 @@ You can change the theme on the fly using the built-in script:
 ```
 
 ## 🚀 Installation
-*(Assuming Arch Linux / Pacman-based distribution)*
+*(Arch Linux / CachyOS — or any pacman-based distribution)*
+
+### Option 1 — Installer script (recommended)
+
+```bash
+git clone <repo-url> ~/dotfiles-hitomatito
+cd ~/dotfiles-hitomatito
+./install.sh            # choose language (ES/EN) interactively
+```
+
+The installer:
+- Detects your distribution (Arch / CachyOS) and the AUR helper (paru/yay)
+- Installs all required packages with `sudo pacman` (asks for confirmation)
+- Backs up any existing config to `~/.config/<name>.bak-<timestamp>` before overwriting
+- Copies configs, scripts to `~/.local/bin`, and `.desktop` entries
+- Validates the Lua syntax and warns about missing optional tools (e.g. `zeditor`)
+
+Flags:
+```bash
+./install.sh --lang es        # force Spanish
+./install.sh --lang en        # force English
+./install.sh --no-packages    # only copy configs, don't install packages
+./install.sh --no-config      # only install packages, don't touch configs
+./install.sh --no-aur         # skip AUR packages (tofi, zen-browser, obsidian)
+./install.sh --dry-run        # simulate without changing anything
+```
+
+### Option 2 — Manual
 
 1. Ensure the core packages are installed (Hyprland, Quickshell, Fish, Tofi, Kitty, Fastfetch).
-2. Clone this repository into your `~/.config`. Hyprland uses the Lua config (`hypr/hyprland.lua`).
-3. Reload Hyprland or log out and log back in.
+2. Clone this repository and copy each folder into `~/.config`. Hyprland uses the Lua config (`hypr/hyprland.lua`).
+3. Copy `bin/*` into `~/.local/bin/` (make them executable).
+4. Log out and log back in.
 
 > **Note**: This config relies on certain system tools like `brightnessctl`, `playerctl`, `nmcli` (NetworkManager), `bluetoothctl`, and `wpctl` (WirePlumber). Make sure you have them installed for the Control Center to function fully.
+> **Note**: The "Notes" buttons in the Quickshell control center use the `zeditor` command. You must provide your own binary named `zeditor` for them to work.
