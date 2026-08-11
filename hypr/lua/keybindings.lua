@@ -2,11 +2,11 @@ local p = require("lua.programs")
 local mainMod = "SUPER"
 
 -- Basic binds
-hl.bind(mainMod .. " + Q", hl.dsp.exec_cmd(p.terminal))
-hl.bind(mainMod .. " + C", hl.dsp.window.close())
+hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(p.terminal))
+hl.bind(mainMod .. " + Q", hl.dsp.window.close())
 hl.bind(mainMod .. " + M", hl.dsp.exit())
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen())
-hl.bind(mainMod .. " + SHIFT + Space", function()
+hl.bind(mainMod .. " + Space", function()
     hl.dispatch(hl.dsp.window.float({ action = "toggle" }))
     hl.dispatch(hl.dsp.window.resize({ x = 800, y = 600, relative = false }))
     hl.dispatch(hl.dsp.window.center())
@@ -14,21 +14,22 @@ end)
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(p.fileManager))
 hl.bind(mainMod .. " + SHIFT + E", hl.dsp.exec_cmd("nautilus"))
 hl.bind(mainMod .. " + V", hl.dsp.exec_cmd(p.smartClipboard))
-hl.bind(mainMod .. " + Z", hl.dsp.exec_cmd(p.smartControlCenter))
+hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(p.smartControlCenter))
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(p.menu))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(p.browser))
 hl.bind(mainMod .. " + O", hl.dsp.exec_cmd(p.note))
-hl.bind("F6", hl.dsp.exec_cmd(p.screenshot))
+hl.bind("Print", hl.dsp.exec_cmd("grim -o active_monitor - | wl-copy"))
+hl.bind(mainMod .. " + SHIFT + S", hl.dsp.exec_cmd(p.screenshot))
 hl.bind(mainMod .. " + N", hl.dsp.exec_cmd(p.powermenu))
-hl.bind(mainMod .. " + F12", hl.dsp.exec_cmd(p.lock))
-hl.bind(mainMod .. " + SHIFT + F12", hl.dsp.exec_cmd("brightnessctl s 0"))
+hl.bind(mainMod .. " + L", hl.dsp.exec_cmd(p.lock))
+hl.bind(mainMod .. " + SHIFT + L", hl.dsp.exec_cmd("brightnessctl s 0"))
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(p.smartTheme))
 hl.bind("mouse:277", hl.dsp.window.close())
 
--- Workspace Packing (SUPER+A)
-hl.bind(mainMod .. " + A", function()
+-- Workspace Packing (SUPER+SHIFT+A)
+hl.bind(mainMod .. " + SHIFT + A", function()
     local workspaces = hl.get_workspaces()
     local windows = hl.get_windows()
     local active_ws = hl.get_active_workspace()
@@ -74,14 +75,26 @@ hl.bind("ALT + up",    hl.dsp.window.resize({ x = 0,   y = -30, relative = true 
 hl.bind("ALT + down",  hl.dsp.window.resize({ x = 0,   y = 30,  relative = true }), { repeating = true })
 
 -- Workspaces
-hl.bind(mainMod .. " + Space", hl.dsp.focus({ workspace = "empty" }))
 for i = 1, 10 do
     local key = i % 10
     hl.bind(mainMod .. " + " .. key,             hl.dsp.focus({ workspace = i}))
     hl.bind(mainMod .. " + SHIFT + " .. key,     hl.dsp.window.move({ workspace = i }))
 end
 hl.bind(mainMod .. " + S",         hl.dsp.workspace.toggle_special("magic"))
-hl.bind(mainMod .. " + SHIFT + S", hl.dsp.window.move({ workspace = "special:magic" }))
+hl.bind(mainMod .. " + SHIFT + M", hl.dsp.window.move({ workspace = "special:magic" }))
+
+-- Minimize / restore (hidden special workspace, Hyprland has no native minimize)
+hl.bind(mainMod .. " + B", hl.dsp.window.move({ workspace = "special:minimized", follow = false }))
+hl.bind(mainMod .. " + SHIFT + B", function()
+    local active = hl.get_active_workspace()
+    if not active then return end
+    for _, win in pairs(hl.get_windows()) do
+        if win.workspace and win.workspace.name == "special:minimized" then
+            hl.dispatch(hl.dsp.window.move({ workspace = active.id, follow = false, window = win }))
+            return
+        end
+    end
+end)
 hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ workspace = "e+1" }))
 hl.bind(mainMod .. " + mouse_up",   hl.dsp.focus({ workspace = "e-1" }))
 

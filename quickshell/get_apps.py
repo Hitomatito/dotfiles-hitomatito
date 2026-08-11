@@ -5,7 +5,10 @@ import configparser
 from pathlib import Path
 
 def get_apps():
+    # Flatpak exports first so duplicated names resolve to the Flatpak build
     dirs = [
+        Path("/var/lib/flatpak/exports/share/applications"),
+        Path.home() / ".local/share/flatpak/exports/share/applications",
         Path("/usr/share/applications"),
         Path.home() / ".local/share/applications"
     ]
@@ -16,10 +19,6 @@ def get_apps():
         if not d.exists():
             continue
         for f in d.glob("*.desktop"):
-            if f.name in seen:
-                continue
-            seen.add(f.name)
-            
             config = configparser.ConfigParser(interpolation=None)
             try:
                 # Read without throwing errors on duplicate keys
@@ -50,6 +49,12 @@ def get_apps():
                 icon = entry.get("Icon", "application-x-executable")
                 
                 if name and exec_cmd:
+                    # Drop duplicates by app name, keeping the first
+                    # (highest-priority) entry, i.e. the Flatpak one.
+                    key = name.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
                     # Clean up exec command (remove %f, %u, etc.)
                     exec_cmd = " ".join([p for p in exec_cmd.split() if not p.startswith("%")])
                     apps.append({"name": name, "cmd": exec_cmd, "icon": icon})
