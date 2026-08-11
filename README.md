@@ -76,7 +76,6 @@ You can change the theme on the fly using the built-in script:
 ### Scripts & Utilities
 - `smart_*.sh`: Intelligent bash wrappers for keybindings that automatically ping Quickshell's IPC if active, or fall back to legacy tools (like Tofi).
 - `tofi-wifi.sh`: Tofi-based GUI to easily connect to open and secured Wi-Fi networks.
-- `amd_s2idle.py`: Advanced AMD debugging script for suspend issues.
 - `gacp`: Fish alias to quickly add, commit, and push updates.
 
 ## ⚙️ Structure
@@ -94,7 +93,7 @@ You can change the theme on the fly using the built-in script:
 ├── preview/      # UI screenshots and previews
 ├── quickshell/   # QML scripts for the main bar and control center
 ├── tofi/         # Tofi menus (app launcher, wifi, power)
-└── waybar/       # (Legacy) Waybar configs
+└── swaylock/     # Swaylock config
 ```
 
 ## 🚀 Installation

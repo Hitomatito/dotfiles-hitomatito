@@ -89,8 +89,7 @@ selection-background = #00000000
 EOF
 done
 
-# --- 5. KITTY, GHOSTTY & WAYBAR ---
-printf "@define-color accent %s;\n@define-color bg %s;\n@define-color fg %s;\n" "$ACCENT" "$BG" "$FG" > ~/.config/waybar/theme.css
+# --- 5. KITTY & GHOSTTY ---
 cat > ~/.config/kitty/theme.conf <<EOF
 foreground $FG
 background $BG
@@ -281,5 +280,4 @@ else
     pkill hyprpaper
 fi
 
-killall -SIGUSR2 waybar > /dev/null 2>&1
 killall -USR1 kitty > /dev/null 2>&1

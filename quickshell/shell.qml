@@ -191,7 +191,6 @@ ShellRoot {
     Process { id: pSpotNext; command: ["playerctl", "--player=spotify", "next"] }
     
     Process { id: pNoteHyprland; command: ["zeditor", userConfig + "/hypr"] }
-    Process { id: pNoteWaybar; command: ["zeditor", userConfig + "/waybar/"] }
     Process { id: pNoteTofi; command: ["zeditor", userConfig + "/tofi/"] }
     Process { id: pNoteKitty; command: ["zeditor", userConfig + "/kitty"] }
     Process { id: pNoteFoot; command: ["zeditor", userConfig + "/foot"] }
@@ -1229,7 +1228,6 @@ ShellRoot {
                         columnSpacing: 8
                         
                         ModernButton { Layout.preferredHeight: 40; text: "Hyprland"; onClicked: { pNoteHyprland.running = true; notesPopup.show = false; controlCenter.show = false } }
-                        ModernButton { Layout.preferredHeight: 40; text: "Waybar"; onClicked: { pNoteWaybar.running = true; notesPopup.show = false; controlCenter.show = false } }
                         ModernButton { Layout.preferredHeight: 40; text: "Tofi"; onClicked: { pNoteTofi.running = true; notesPopup.show = false; controlCenter.show = false } }
                         ModernButton { Layout.preferredHeight: 40; text: "Kitty"; onClicked: { pNoteKitty.running = true; notesPopup.show = false; controlCenter.show = false } }
                         ModernButton { Layout.preferredHeight: 40; text: "Foot"; onClicked: { pNoteFoot.running = true; notesPopup.show = false; controlCenter.show = false } }
