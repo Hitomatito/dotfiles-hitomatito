@@ -50,6 +50,7 @@ ShellRoot {
     property string temperature: "0"
     property string updates: "0"
     property string brightnessLevel: "0%"
+    property bool hasBacklight: false
     property string volumeOut: "0%"
     property bool volumeMuted: false
     property string volumeMic: "0%"
@@ -124,9 +125,9 @@ ShellRoot {
 
     Process {
         id: pBright
-        command: ["bash", "-c", "brightnessctl -m | awk -F, '{print $4}'"]
+        command: ["bash", "-c", "if brightnessctl -l 2>/dev/null | grep -q 'Class: backlight'; then brightnessctl -m | awk -F, '{print $4}'; else echo 'none'; fi"]
         running: true
-        stdout: SplitParser { onRead: text => root.brightnessLevel = text.trim() }
+        stdout: SplitParser { onRead: text => { var v = text.trim(); if (v === 'none') { root.hasBacklight = false; } else { root.hasBacklight = true; root.brightnessLevel = v; } } }
     }
     Timer { interval: 1000; running: true; repeat: true; onTriggered: pBright.running = true }
 
@@ -237,11 +238,12 @@ ShellRoot {
         running: true; stdout: SplitParser { onRead: data => root.bluetoothStatus = data.trim() }
     }
     Process {
-        command: ["sh", "-c", "while true; do sig=$(LC_ALL=C nmcli -t -f active,signal dev wifi | grep '^yes' | cut -d: -f2); if [ -z \"$sig\" ]; then echo 'disc'; else echo \"$sig\"; fi; sleep 3; done"]
+        command: ["sh", "-c", "while true; do if LC_ALL=C nmcli -t -f TYPE,STATE device | grep -q 'ethernet:connected'; then echo 'eth'; else sig=$(LC_ALL=C nmcli -t -f active,signal dev wifi | grep '^yes' | cut -d: -f2); if [ -z \"$sig\" ]; then echo 'disc'; else echo \"$sig\"; fi; fi; sleep 3; done"]
         running: true; stdout: SplitParser { 
             onRead: data => {
                 var d = data.trim();
                 if (d === 'disc') { root.wifiIcon = "󰤮"; root.wifiText = "Disconnected"; }
+                else if (d === 'eth') { root.wifiIcon = "󰈀"; root.wifiText = "Ethernet"; }
                 else {
                     var s = parseInt(d);
                     root.wifiText = s + "%";
@@ -828,11 +830,10 @@ ShellRoot {
                         
                         // System Stats (Moved under clock)
                         RowLayout {
-                            Layout.fillWidth: true
                             spacing: 8
                             
-                            Text { text: " " + root.temperature + "°"; color: parseInt(root.temperature) >= 80 ? root.colCrit : root.colMuted; font.family: root.fontFamily; font.pixelSize: 12; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter }
-                            Text { text: "󰮯 " + root.updates; color: root.colMuted; font.family: root.fontFamily; font.pixelSize: 12; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; visible: parseInt(root.updates) > 0 }
+                            Text { text: " " + root.temperature + "°"; color: parseInt(root.temperature) >= 80 ? root.colCrit : root.colMuted; font.family: root.fontFamily; font.pixelSize: 12 }
+                            Text { text: "󰮯 " + root.updates; color: root.colMuted; font.family: root.fontFamily; font.pixelSize: 12; visible: parseInt(root.updates) > 0 }
                         }
                     
                     Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.rgba(1,1,1,0.1) }
@@ -935,6 +936,7 @@ ShellRoot {
                         // Brightness
                         RowLayout {
                             spacing: 8
+                            visible: root.hasBacklight
                             Text { text: "󰃠"; color: root.colFg; font.family: root.fontFamily; font.pixelSize: 18 }
                             ModernSlider {
                                 value: parseInt(root.brightnessLevel) / 100.0
@@ -975,6 +977,7 @@ ShellRoot {
                             onMainClicked: { wifiMenuPopup.show = true; controlCenter.show = false }
                             onRightIconClicked: { wifiMenuPopup.show = true; controlCenter.show = false }
                             onIconClicked: { 
+                                if (root.wifiText === "Ethernet") return;
                                 root.wifiText = (root.wifiText === "Disconnected") ? "Connecting..." : "Disconnected"
                                 root.wifiIcon = (root.wifiText === "Connecting...") ? "󰤨" : "󰤮"
                                 pWifiToggle.running = true 
