@@ -428,6 +428,14 @@ ShellRoot {
                     }
                 }
             }
+
+            Mod {
+                text: (root.bluetoothStatus === "on" ? "󰂯 " : "") + root.wifiIcon + " " + root.wifiText
+                textColor: root.colFg
+                bgColor: "transparent"
+                show: !controlCenter.show && !root.showOsd
+                onClicked: controlCenter.show = !controlCenter.show
+            }
         }
     }
 }
