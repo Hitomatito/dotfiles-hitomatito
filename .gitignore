@@ -3,3 +3,5 @@
 .DS_Store
 *.swp
 .gemini/
+__pycache__/
+*.pyc

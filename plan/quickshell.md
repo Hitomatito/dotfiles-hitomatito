@@ -7,8 +7,8 @@ This document explains the entire architecture, layout, and system integration o
 The desktop UI is powered by `quickshell`, taking advantage of QML's fluid animations and declarative UI, alongside Wayland protocols like `wlr-layer-shell`. The main configuration revolves around the `shell.qml` file, which orchestrates the Dynamic Island, Control Center, and acts as the parent for various specialized popups.
 
 ### Communication & IPC
-- **Quickshell IPC**: We use `quickshell ipc call qsIpc <function>` to trigger UI updates from external bash scripts (e.g., `refreshBatteryMode` or `toggleThemeSwitcher`).
-- **Hyprland Interop**: We directly dispatch Hyprland commands (like `workspace X` or `hyprctl eval`) natively from QML. Lua state synchronization (like the Battery Mode toggling `animations = { enabled = false }`) runs in perfect sync with the Quickshell frontend.
+- **Quickshell IPC**: We use `quickshell ipc call qsIpc <function>` to trigger UI updates from external bash scripts (e.g., `toggleControlCenter` or `toggleThemeSwitcher`).
+- **Hyprland Interop**: We directly dispatch Hyprland commands (like `workspace X` or `hyprctl eval`) natively from QML.
 
 ## 2. The Dynamic Island (`PanelWindow`)
 
@@ -16,10 +16,8 @@ The top bar functions as a "Dynamic Island" that seamlessly expands and contract
 
 **Features:**
 - **Workspaces**: Dynamically reads Hyprland's active workspaces and displays numeric indicators.
-- **Battery Status**: Shows a dynamically colored battery icon that blinks critically when below 15% and displays charging states.
 - **Timer & Stopwatch**: When active, the countdown/countup seamlessly embeds into the island.
-- **Power Saver Indicator**: Temporarily spawns a 1-second "Power Saver" or "Performance" pill right inside the island to confirm power state transitions before smoothly collapsing.
-- **Mic Indicator**: A dynamic orange dot temporarily slides in for 1 second when the microphone is unmuted, mimicking the power mode transitions.
+- **Mic Indicator**: A dynamic orange dot temporarily slides in for 1 second when the microphone is unmuted.
 
 ## 3. The Control Center (`PopupWindow`)
 
@@ -30,14 +28,10 @@ Triggered from the island, the Control Center is a comprehensive hub providing q
   - System Volume (`wpctl`) — The speaker icon acts as an interactive click-to-mute button.
   - Microphone Volume (`wpctl`) — The mic icon serves as a dynamic click-to-mute toggle.
   - Screen Brightness (`brightnessctl`)
-  - Keyboard Backlight (`asusctl` polling)
-  - CPU Wattage (`supergfxctl` / `rog-control-center`)
-  - Battery Charge Limit
 - **Media Controls**: Displays the current Spotify track and playback controls (`playerctl`).
 - **Toggles (Grid)**:
   - **Row 1**: Bluetooth & Wi-Fi (opens detailed sub-menus).
-  - **Row 2**: Stopwatch & Timer toggles.
-  - **Row 3 (Bottom)**: GPU Mode (`supergfxctl`), Configs/Notes launcher, and Battery Power Saver.
+  - **Row 2**: Stopwatch & Timer toggles, plus a Configs/Notes launcher.
 
 ## 4. Specialized Popups (Tofi Migration)
 
@@ -64,8 +58,6 @@ We entirely eliminated `tofi` and dedicated launchers in favor of beautifully an
 
 - **Glassmorphism**: Uses layered transparent grays (e.g., 10% base opacity, 15% hover opacity) over a dark background for buttons and fields.
 - **Animations**: `NumberAnimation` and `ColorAnimation` properties give every hover, click, and transition a premium feel.
-- **Battery Optimization**: All Quickshell QML animation durations are conditionally tied to `root.batteryMode`. When the Power Saver toggle is active, all durations drop to `0`, perfectly matching Hyprland's disabled effects for maximum battery life.
-- **Battery Mode Fallbacks**: Pressing `SUPER+B` intelligently kills Quickshell and revives the legacy `Waybar`/`Tofi` suite to save maximum resources, forcing a `black` theme and aggressively disabling `hyprland` blur/shadows. When toggled back, it restores Quickshell and the `minimal` theme. Keybindings adapt automatically thanks to `smart_*.sh` wrappers that ping Quickshell IPC if active, or fall back to legacy scripts if not.
 
 ## 6. Full System Integration Updates
 

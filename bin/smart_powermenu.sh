@@ -1,8 +1,8 @@
 #!/bin/bash
 if pgrep -x "quickshell" > /dev/null; then
-    # Performance Mode: Use Quickshell IPC
+    # Quickshell active: use its IPC
     quickshell ipc call qsIpc togglePowerMenu
 else
-    # Battery Mode: Fallback to Tofi/Legacy
+    # Fallback to Tofi when Quickshell is not running
     "$HOME/.config/tofi/powermenu.sh"
 fi
