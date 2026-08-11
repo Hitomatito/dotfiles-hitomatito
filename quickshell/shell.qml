@@ -30,7 +30,7 @@ ShellRoot {
     property bool isAnyPopupAnimActive: isAnyPopupOpen || controlCenter.animHeight > 36 || appLauncherPopup.animHeight > 36 || clipboardManagerPopup.animHeight > 36 || themeSwitcherPopup.animHeight > 36 || wifiMenuPopup.animHeight > 36 || powerMenuPopup.animHeight > 36 || bluetoothMenuPopup.animHeight > 36
 
     Process {
-        command: [userConfig + "/quickshell/count_tiled.sh"]
+        command: [root.userConfig + "/quickshell/count_tiled.sh"]
         running: true
         stdout: SplitParser {
             onRead: data => {
@@ -190,14 +190,14 @@ ShellRoot {
     Process { id: pSpotPlay; command: ["playerctl", "--player=spotify", "play-pause"] }
     Process { id: pSpotNext; command: ["playerctl", "--player=spotify", "next"] }
     
-    Process { id: pNoteHyprland; command: ["zeditor", userConfig + "/hypr"] }
-    Process { id: pNoteTofi; command: ["zeditor", userConfig + "/tofi/"] }
-    Process { id: pNoteKitty; command: ["zeditor", userConfig + "/kitty"] }
-    Process { id: pNoteFoot; command: ["zeditor", userConfig + "/foot"] }
-    Process { id: pNoteGhostty; command: ["zeditor", userConfig + "/ghostty"] }
-    Process { id: pNoteFish; command: ["zeditor", userConfig + "/fish"] }
-    Process { id: pNoteFastfetch; command: ["zeditor", userConfig + "/fastfetch"] }
-    Process { id: pNoteQuickshell; command: ["zeditor", userConfig + "/quickshell"] }
+    Process { id: pNoteHyprland; command: ["zeditor", root.userConfig + "/hypr"] }
+    Process { id: pNoteTofi; command: ["zeditor", root.userConfig + "/tofi/"] }
+    Process { id: pNoteKitty; command: ["zeditor", root.userConfig + "/kitty"] }
+    Process { id: pNoteFoot; command: ["zeditor", root.userConfig + "/foot"] }
+    Process { id: pNoteGhostty; command: ["zeditor", root.userConfig + "/ghostty"] }
+    Process { id: pNoteFish; command: ["zeditor", root.userConfig + "/fish"] }
+    Process { id: pNoteFastfetch; command: ["zeditor", root.userConfig + "/fastfetch"] }
+    Process { id: pNoteQuickshell; command: ["zeditor", root.userConfig + "/quickshell"] }
 
     
 
@@ -1311,3 +1311,4 @@ ShellRoot {
     }
 
     }
+}
