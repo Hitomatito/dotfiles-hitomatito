@@ -3,7 +3,6 @@ import QtQuick
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import QtQuick.Layouts
-import QtQuick.Controls
 import Quickshell.Io
 import Qt.labs.platform
 
@@ -18,14 +17,18 @@ ShellRoot {
     property color colHover: Qt.rgba(1, 1, 1, 0.1)
     property color colCrit: "#ff0000"
     property string fontFamily: "JetBrainsMono Nerd Font"
-    property int fontSize: 10 // Reduced font size to match waybar 9px
+    property int fontSize: 10
     // Home real del usuario (los dotfiles funcionan para cualquier usuario)
     property string userHome: String(StandardPaths.writableLocation(StandardPaths.HomeLocation)).replace(/^file:\/\//, "")
     property string userConfig: String(StandardPaths.writableLocation(StandardPaths.ConfigLocation)).replace(/^file:\/\//, "")
     property int windowCount: 0
     property bool isBarMode: windowCount === 1
     property real notchWidth: notchLayout.implicitWidth
-    
+
+    // Se conserva solo porque los popups externos (PowerMenu, AppLauncher, ...)
+    // lo referencian en sus animaciones; siempre es false.
+    property bool batteryMode: false
+
     property bool isAnyPopupOpen: controlCenter.show || appLauncherPopup.show || clipboardManagerPopup.show || themeSwitcherPopup.show || wifiMenuPopup.show || powerMenuPopup.show || bluetoothMenuPopup.show
     property bool isAnyPopupAnimActive: isAnyPopupOpen || controlCenter.animHeight > 36 || appLauncherPopup.animHeight > 36 || clipboardManagerPopup.animHeight > 36 || themeSwitcherPopup.animHeight > 36 || wifiMenuPopup.animHeight > 36 || powerMenuPopup.animHeight > 36 || bluetoothMenuPopup.animHeight > 36
 
@@ -56,17 +59,14 @@ ShellRoot {
     property string volumeMic: "0%"
     property bool micMuted: false
     property string bluetoothStatus: "off"
-    // Mantenido solo por compatibilidad con las animaciones de los popups
-    // (el modo bateria se elimino: dotfiles genericos para PC y portatil)
-    property bool batteryMode: false
 
     property bool showMicIndicator: false
-    
+
     onMicMutedChanged: {
         showMicIndicator = true;
         micIndicatorTimer.restart();
     }
-    
+
     Timer {
         id: micIndicatorTimer
         interval: 1000
@@ -74,10 +74,22 @@ ShellRoot {
         onTriggered: root.showMicIndicator = false
     }
 
-    property string spotifyStatus: "offline"
-    property string spotifyText: ""
+    // Reproductor multimedia genérico (MPRIS vía playerctl)
+    property string mediaStatus: "offline"
+    property string mediaText: ""
+    property bool mediaPlaying: mediaStatus === "Playing"
     property string wifiIcon: "󰤯"
     property string wifiText: "Disconnected"
+    property string wifiRadio: "off"
+    property bool wifiToggling: false
+    property bool ethConnected: false
+    property bool ethToggling: false
+    property bool btToggling: false
+    property var audioOuts: []
+    property string defaultSink: "—"
+    property int defaultSinkId: -1
+    property var _sinkBuf: []
+    property bool _inSinks: false
 
     property bool showOsd: false
     property string osdText: "0%"
@@ -87,41 +99,118 @@ ShellRoot {
     property bool showAppLauncher: false
     property bool showClipboard: false
 
-    // Stopwatch & Timer state
-    property bool stopwatchRunning: false
-    property int stopwatchSeconds: 0
-    property string stopwatchText: "00:00"
-    
-    property bool timerRunning: false
-    property int timerSeconds: 0
-    property int timerTotal: 300 // 5 minutes default
-    property string timerText: "05:00"
-    
-    property int pomodoroState: 0 // 0 = off, 1 = work, 2 = break
-    property int pomodoroWorkTotal: 1500 // 25 minutes
-    property int pomodoroBreakTotal: 300 // 5 minutes
-    
-    function formatTime(s) {
-        var m = Math.floor(s / 60);
-        var sec = s % 60;
-        return (m < 10 ? "0" + m : m) + ":" + (sec < 10 ? "0" + sec : sec);
-    }
-
     // Click Actions
-    Process { id: pPavu; command: ["pavucontrol"] }
     Process { id: pMicMute; command: ["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"] }
     Process { id: pVolMute; command: ["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"] }
     Process { id: pVolSet } // Dynamic volume setter
-    Process { id: pBlueberry; command: ["blueberry"] }
+    Process { id: pMicSet } // Dynamic mic volume setter
+    Process { id: pAudioSet } // Dynamic default sink setter
+    Process { id: pBrightSet; command: ["brightnessctl", "s", "50%"] }
 
-    Process { id: pWifiToggle; command: ["sh", "-c", "if [ \"$(nmcli radio wifi)\" = \"enabled\" ]; then nmcli radio wifi off; else nmcli radio wifi on; fi"] }
-    Process { id: pBtToggle; command: ["sh", "-c", "if bluetoothctl show | grep -q 'Powered: yes'; then rfkill block bluetooth; else rfkill unblock bluetooth; fi"] }
-    Process { id: pWifiOn; command: ["nmcli", "radio", "wifi", "on"] }
-    Process { id: pWifiOff; command: ["nmcli", "radio", "wifi", "off"] }
-    Process { id: pBtOn; command: ["rfkill", "unblock", "bluetooth"] }
-    Process { id: pBtOff; command: ["rfkill", "block", "bluetooth"] }
+    Process {
+        id: pWifiToggle
+        command: ["sh", "-c", "if [ \"$(nmcli radio wifi)\" = \"enabled\" ]; then nmcli radio wifi off; echo off; else nmcli radio wifi on; echo on; fi"]
+        stdout: SplitParser {
+            onRead: data => {
+                var d = data.trim();
+                // Actualización inmediata del estado visual (el poll de 3s lo confirma después).
+                if (d === 'on') {
+                    root.wifiRadio = "on";
+                    root.wifiText = "Scanning";
+                    root.wifiIcon = "󰤮";
+                } else if (d === 'off') {
+                    root.wifiRadio = "off";
+                    root.wifiText = "Disconnected";
+                    root.wifiIcon = "󰤮";
+                }
+            }
+        }
+        onRunningChanged: {
+            // Mantén el estado "Encendiendo…/Apagando…" visible un mínimo de ~1s,
+            // aunque el comando termine antes, para que se note el cambio.
+            if (running) {
+                root.wifiToggling = true;
+                wifiToggleHold.start();
+            }
+        }
+    }
+    Timer {
+        id: wifiToggleHold
+        interval: 1000
+        onTriggered: root.wifiToggling = false
+    }
+    Process {
+        id: pBtToggle
+        command: ["sh", "-c", "if bluetoothctl show | grep -q 'Powered: yes'; then rfkill block bluetooth; else rfkill unblock bluetooth; fi"]
+        onRunningChanged: {
+            if (running) {
+                root.btToggling = true;
+                btToggleHold.start();
+            }
+        }
+    }
+    Timer {
+        id: btToggleHold
+        interval: 1000
+        onTriggered: root.btToggling = false
+    }
+    Process {
+        id: pEthToggle
+        command: ["sh", "-c", "dev=$(LC_ALL=C nmcli -t -f DEVICE,TYPE device | grep ':ethernet:' | head -1 | cut -d: -f1); if [ -z \"$dev\" ]; then exit 0; fi; if LC_ALL=C nmcli -t -f DEVICE,STATE device | grep -q \"^$dev:connected\"; then nmcli device disconnect \"$dev\"; echo off; else nmcli device connect \"$dev\"; echo on; fi"]
+        stdout: SplitParser {
+            onRead: data => {
+                var d = data.trim();
+                // Actualización inmediata; el poll de 3s luego confirma.
+                if (d === 'on') root.ethConnected = true;
+                else if (d === 'off') root.ethConnected = false;
+            }
+        }
+        onRunningChanged: {
+            if (running) {
+                root.ethToggling = true;
+                ethToggleHold.start();
+            }
+        }
+    }
+    Timer {
+        id: ethToggleHold
+        interval: 1000
+        onTriggered: root.ethToggling = false
+    }
 
-    Process { id: pSpotPrev; command: ["playerctl", "--player=spotify", "previous"] }
+    Process {
+        command: ["sh", "-c", "while true; do wpctl status; sleep 3; done"]
+        running: true; stdout: SplitParser {
+            onRead: data => {
+                var line = data;
+                if (line.indexOf("Sinks:") >= 0) {
+                    root._sinkBuf = [];
+                    root._inSinks = true;
+                    return;
+                }
+                if (root._inSinks) {
+                    if (line.indexOf("Devices:") >= 0 || line.indexOf("Sources:") >= 0 ||
+                        line.indexOf("Filters:") >= 0 || line.indexOf("Streams:") >= 0 ||
+                        line.indexOf("├─") >= 0 || line.indexOf("└─") >= 0) {
+                        root._inSinks = false;
+                        if (root._sinkBuf.length > 0) root.audioOuts = root._sinkBuf.slice();
+                        return;
+                    }
+                    var m = line.match(/(\*)?\s+(\d+)\.\s+(.+?)\s+\[vol/);
+                    if (m) {
+                        var name = m[3].trim();
+                        var id = parseInt(m[2]);
+                        root._sinkBuf.push({ id: id, name: name, def: m[1] === "*" });
+                        if (m[1] === "*") { root.defaultSink = name; root.defaultSinkId = id; }
+                    }
+                    return;
+                }
+            }
+        }
+    }
+    Process { id: pMediaPrev; command: ["playerctl", "previous"] }
+    Process { id: pMediaPlay; command: ["playerctl", "play-pause"] }
+    Process { id: pMediaNext; command: ["playerctl", "next"] }
 
     Process {
         id: pBright
@@ -131,76 +220,12 @@ ShellRoot {
     }
     Timer { interval: 1000; running: true; repeat: true; onTriggered: pBright.running = true }
 
-
     Timer {
         id: osdTimer
         interval: 2000
         repeat: false
         onTriggered: root.showOsd = false
     }
-
-    Timer {
-        id: stopwatchTimer
-        interval: 1000
-        running: root.stopwatchRunning
-        repeat: true
-        onTriggered: {
-            root.stopwatchSeconds++;
-            root.stopwatchText = root.formatTime(root.stopwatchSeconds);
-        }
-    }
-
-    Timer {
-        id: timerTimer
-        interval: 1000
-        running: root.timerRunning
-        repeat: true
-        onTriggered: {
-            if (root.timerSeconds > 0) {
-                root.timerSeconds--;
-                root.timerText = root.formatTime(root.timerSeconds);
-            } else {
-                if (root.pomodoroState === 1) {
-                    root.pomodoroState = 2;
-                    root.timerTotal = root.pomodoroBreakTotal;
-                    root.timerSeconds = root.timerTotal;
-                    root.timerText = root.formatTime(root.timerTotal);
-                    pNotify.command = ["notify-send", "-u", "critical", "-i", "timer", "Pomodoro", "Work session finished! Time for a break."];
-                    pNotify.running = true;
-                } else if (root.pomodoroState === 2) {
-                    root.pomodoroState = 1;
-                    root.timerTotal = root.pomodoroWorkTotal;
-                    root.timerSeconds = root.timerTotal;
-                    root.timerText = root.formatTime(root.timerTotal);
-                    pNotify.command = ["notify-send", "-u", "normal", "-i", "timer", "Pomodoro", "Break finished! Back to work."];
-                    pNotify.running = true;
-                } else {
-                    root.timerRunning = false;
-                }
-            }
-        }
-    }
-    
-    Process { id: pNotify }
-
-    Process {
-        id: pBrightSet
-        command: ["brightnessctl", "s", "50%"]
-    }
-
-    Process { id: pSpotPlay; command: ["playerctl", "--player=spotify", "play-pause"] }
-    Process { id: pSpotNext; command: ["playerctl", "--player=spotify", "next"] }
-    
-    Process { id: pNoteHyprland; command: ["zeditor", root.userConfig + "/hypr"] }
-    Process { id: pNoteTofi; command: ["zeditor", root.userConfig + "/tofi/"] }
-    Process { id: pNoteKitty; command: ["zeditor", root.userConfig + "/kitty"] }
-    Process { id: pNoteFoot; command: ["zeditor", root.userConfig + "/foot"] }
-    Process { id: pNoteGhostty; command: ["zeditor", root.userConfig + "/ghostty"] }
-    Process { id: pNoteFish; command: ["zeditor", root.userConfig + "/fish"] }
-    Process { id: pNoteFastfetch; command: ["zeditor", root.userConfig + "/fastfetch"] }
-    Process { id: pNoteQuickshell; command: ["zeditor", root.userConfig + "/quickshell"] }
-
-    
 
     // Background Process Loops
     Process {
@@ -213,7 +238,7 @@ ShellRoot {
     }
     Process {
         command: ["sh", "-c", "while true; do wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null; sleep 0.5; done"]
-        running: true; stdout: SplitParser { 
+        running: true; stdout: SplitParser {
             onRead: data => {
                 var d = data.trim();
                 root.volumeMuted = d.includes("[MUTED]");
@@ -224,7 +249,7 @@ ShellRoot {
     }
     Process {
         command: ["sh", "-c", "while true; do wpctl get-volume @DEFAULT_AUDIO_SOURCE@ 2>/dev/null; sleep 0.5; done"]
-        running: true; stdout: SplitParser { 
+        running: true; stdout: SplitParser {
             onRead: data => {
                 var d = data.trim();
                 root.micMuted = d.includes("[MUTED]");
@@ -238,14 +263,21 @@ ShellRoot {
         running: true; stdout: SplitParser { onRead: data => root.bluetoothStatus = data.trim() }
     }
     Process {
-        command: ["sh", "-c", "while true; do if LC_ALL=C nmcli -t -f TYPE,STATE device | grep -q 'ethernet:connected'; then echo 'eth'; else sig=$(LC_ALL=C nmcli -t -f active,signal dev wifi | grep '^yes' | cut -d: -f2); if [ -z \"$sig\" ]; then echo 'disc'; else echo \"$sig\"; fi; fi; sleep 3; done"]
-        running: true; stdout: SplitParser { 
+        command: ["sh", "-c", "while true; do if LC_ALL=C nmcli -t -f TYPE,STATE device | grep -q '^ethernet:connected'; then ep=E:up; else ep=E:down; fi; rad=$(nmcli -t -f WIFI radio 2>/dev/null); if [ \"$rad\" = \"enabled\" ]; then rp=R:on; sig=$(LC_ALL=C nmcli -t -f active,signal dev wifi | grep '^yes' | cut -d: -f2); if [ -z \"$sig\" ]; then sig='-'; fi; else rp=R:off; sig='-'; fi; echo \"$ep|$rp|$sig\"; sleep 3; done"]
+        running: true; stdout: SplitParser {
             onRead: data => {
                 var d = data.trim();
-                if (d === 'disc') { root.wifiIcon = "󰤮"; root.wifiText = "Disconnected"; }
-                else if (d === 'eth') { root.wifiIcon = "󰈀"; root.wifiText = "Ethernet"; }
-                else {
-                    var s = parseInt(d);
+                var p = d.split("|");
+                if (p.length < 3) return;
+                // Estado Ethernet y radio Wi-Fi por separado (una sola pasada de nmcli).
+                root.ethConnected = (p[0] === "E:up");
+                root.wifiRadio = (p[1] === "R:on") ? "on" : "off";
+                var sig = p[2];
+                if (sig === '-') {
+                    if (root.wifiRadio === "on") { root.wifiIcon = "󰤮"; root.wifiText = "Scanning"; }
+                    else { root.wifiIcon = "󰤮"; root.wifiText = "Disconnected"; }
+                } else {
+                    var s = parseInt(sig);
                     root.wifiText = s + "%";
                     if (s > 80) root.wifiIcon = "󰤨";
                     else if (s > 60) root.wifiIcon = "󰤥";
@@ -257,12 +289,12 @@ ShellRoot {
         }
     }
     Process {
-        command: ["sh", "-c", "while true; do status=$(playerctl --player=spotify status 2>/dev/null || echo 'offline'); if [ \"$status\" != 'offline' ]; then text=$(playerctl --player=spotify metadata --format '{{title}} - {{artist}}' 2>/dev/null); echo \"$status|$text\"; else echo 'offline|'; fi; sleep 0.5; done"]
-        running: true; stdout: SplitParser { 
+        command: ["sh", "-c", "while true; do st=$(playerctl status 2>/dev/null); if [ \"$st\" = \"Playing\" ] || [ \"$st\" = \"Paused\" ]; then txt=$(playerctl metadata --format '{{title}} - {{artist}}' 2>/dev/null); echo \"$st|$txt\"; else echo 'offline|'; fi; sleep 1; done"]
+        running: true; stdout: SplitParser {
             onRead: data => {
                 var p = data.split("|");
-                root.spotifyStatus = p[0].trim();
-                root.spotifyText = p[1] ? p[1].trim() : "";
+                root.mediaStatus = p[0].trim();
+                root.mediaText = p[1] ? p[1].trim() : "";
             }
         }
     }
@@ -277,13 +309,13 @@ ShellRoot {
         property bool show: true
         property real customWidth: 0
         default property alias customContent: contentBox.data
-        
+
         Layout.fillHeight: true
         Layout.preferredWidth: show ? (customWidth > 0 ? customWidth + 16 : modText.implicitWidth + 16) : 0
-        Behavior on Layout.preferredWidth { 
-            NumberAnimation { duration: root.batteryMode ? 0 : 300; easing.type: Easing.OutExpo } 
+        Behavior on Layout.preferredWidth {
+            NumberAnimation { duration: 300; easing.type: Easing.OutExpo }
         }
-        
+
         visible: Layout.preferredWidth > 0
         clip: true
         hoverEnabled: true
@@ -291,13 +323,13 @@ ShellRoot {
         Rectangle {
             anchors.fill: parent
             color: parent.bgColor
-            Behavior on color { ColorAnimation { duration: root.batteryMode ? 0 : 200 } }
-            
+            Behavior on color { ColorAnimation { duration: 200 } }
+
             SequentialAnimation on opacity {
                 running: modRoot.blink
                 loops: Animation.Infinite
-                NumberAnimation { to: 0.1; duration: root.batteryMode ? 0 : 500 }
-                NumberAnimation { to: 1.0; duration: root.batteryMode ? 0 : 500 }
+                NumberAnimation { to: 0.1; duration: 500 }
+                NumberAnimation { to: 1.0; duration: 500 }
             }
         }
 
@@ -306,17 +338,17 @@ ShellRoot {
             width: modText.width
             height: modText.height
             scale: parent.containsPress ? 0.85 : (parent.containsMouse ? 1.1 : 1.0)
-            Behavior on scale { 
-                NumberAnimation { duration: root.batteryMode ? 0 : 200; easing.type: Easing.OutBack; easing.overshoot: 2.0 } 
+            Behavior on scale {
+                NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 2.0 }
             }
-            
+
             Text {
                 id: modText
                 text: parent.parent.text
                 color: parent.parent.textColor
                 font { family: root.fontFamily; pixelSize: root.fontSize; bold: true }
                 anchors.centerIn: parent
-                Behavior on color { ColorAnimation { duration: root.batteryMode ? 0 : 200 } }
+                Behavior on color { ColorAnimation { duration: 200 } }
             }
             Item {
                 id: contentBox
@@ -328,7 +360,7 @@ ShellRoot {
     Rectangle {
         id: notchRect
         opacity: (!root.isAnyPopupAnimActive) || root.isBarMode ? 1.0 : 0.0
-        
+
         anchors.top: parent.top
         anchors.topMargin: root.isBarMode ? 0 : 4
         anchors.horizontalCenter: parent.horizontalCenter
@@ -336,28 +368,28 @@ ShellRoot {
         width: root.isBarMode ? parent.width : notchLayout.implicitWidth + 32
         color: Qt.rgba(0.02, 0.02, 0.02, 0.95)
         radius: root.isBarMode ? 0 : 16
-        
-        Behavior on width { NumberAnimation { duration: root.batteryMode ? 0 : 400; easing.type: Easing.OutExpo } }
-        Behavior on radius { NumberAnimation { duration: root.batteryMode ? 0 : 400; easing.type: Easing.OutExpo } }
-        Behavior on anchors.topMargin { NumberAnimation { duration: root.batteryMode ? 0 : 400; easing.type: Easing.OutExpo } }
+
+        Behavior on width { NumberAnimation { duration: 400; easing.type: Easing.OutExpo } }
+        Behavior on radius { NumberAnimation { duration: 400; easing.type: Easing.OutExpo } }
+        Behavior on anchors.topMargin { NumberAnimation { duration: 400; easing.type: Easing.OutExpo } }
         border.color: Qt.rgba(1, 1, 1, 0.1)
         border.width: root.isBarMode ? 0 : 1
-        
+
         RowLayout {
             id: notchLayout
             opacity: root.isAnyPopupOpen ? 0 : 1
-            Behavior on opacity { NumberAnimation { duration: root.batteryMode ? 0 : 150 } }
+            Behavior on opacity { NumberAnimation { duration: 150 } }
             anchors.verticalCenter: parent.verticalCenter
             anchors.horizontalCenter: parent.horizontalCenter
             height: parent.height
             spacing: 8
-            
+
             Repeater {
                 model: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
                 Mod {
                     property var ws: Hyprland.workspaces.values.find(w => w.id === modelData)
                     property bool isActive: Hyprland.focusedWorkspace != null && Hyprland.focusedWorkspace.id === modelData
-                    
+
                     text: modelData
                     textColor: isActive ? root.colFg : root.colMuted
                     bgColor: "transparent"
@@ -366,24 +398,6 @@ ShellRoot {
                 }
             }
 
-            Mod {
-                property bool isActive: root.stopwatchRunning || root.stopwatchSeconds > 0
-                text: "󱎫 " + root.stopwatchText
-                textColor: root.stopwatchRunning ? "#FFA500" : root.colFg
-                bgColor: "transparent"
-                show: isActive && !controlCenter.show && !root.showOsd
-                onClicked: controlCenter.show = true
-            }
-            
-            Mod {
-                property bool isActive: root.timerRunning || (root.timerSeconds > 0 && root.timerSeconds < root.timerTotal)
-                text: "󰔛 " + root.timerText
-                textColor: root.timerRunning ? "#FFA500" : root.colFg
-                bgColor: "transparent"
-                show: isActive && !controlCenter.show && !root.showOsd
-                onClicked: controlCenter.show = true
-            }
-            
             Mod {
                 text: ""
                 textColor: root.micMuted ? root.colMuted : "#FFA500"
@@ -397,7 +411,7 @@ ShellRoot {
                 bgColor: "transparent"
                 show: root.showOsd
                 customWidth: 140
-                
+
                 Item {
                     anchors.centerIn: parent
                     width: 140
@@ -432,7 +446,13 @@ ShellRoot {
             }
 
             Mod {
-                text: (root.bluetoothStatus === "on" ? "󰂯 " : "") + root.wifiIcon + " " + root.wifiText
+                text: (root.bluetoothStatus === "on" ? "󰂯 " : "")
+                      + (root.ethConnected
+                         ? "󰈀 Cable" + (root.wifiRadio === "on" ? " · Wi-Fi" : "")
+                         : root.wifiIcon + " "
+                           + (root.wifiText === "Disconnected" ? "Apagado"
+                              : root.wifiText === "Scanning" ? "Buscando…"
+                              : root.wifiText))
                 textColor: root.colFg
                 bgColor: "transparent"
                 show: !controlCenter.show && !root.showOsd
@@ -440,816 +460,11 @@ ShellRoot {
             }
         }
     }
-}
 
-
-    component ModernBatteryIcon: Item {
-        id: battIcon
-        property real level: 1.0
-        property bool charging: false
-        property color colFg: root.colFg
-        
-        implicitWidth: 32
-        implicitHeight: 14
-        
-        Rectangle {
-            id: outline
-            width: 26
-            height: 12
-            anchors.verticalCenter: parent.verticalCenter
-            color: "transparent"
-            border.color: battIcon.colFg
-            border.width: 1.5
-            radius: 4
-            opacity: 0.7
-            
-            Rectangle {
-                id: fill
-                x: 2
-                y: 2
-                width: Math.max(0, (parent.width - 4) * battIcon.level)
-                height: parent.height - 4
-                radius: 2
-                color: {
-                    if (battIcon.charging) return "#76B900";
-                    if (battIcon.level <= 0.2) return "#FF3B30";
-                    return battIcon.colFg;
-                }
-                Behavior on width { NumberAnimation { duration: root.batteryMode ? 0 : 300; easing.type: Easing.OutCubic } }
-            }
-        }
-        
-        // The nub
-        Rectangle {
-            width: 3
-            height: 6
-            anchors.left: outline.right
-            anchors.leftMargin: 1
-            anchors.verticalCenter: parent.verticalCenter
-            color: battIcon.colFg
-            opacity: 0.7
-            radius: 1.5
-        }
-        
-        // Charging bolt
-        Text {
-            visible: battIcon.charging
-            text: ""
-            font.pixelSize: 9
-            color: "#ffffff"
-            anchors.centerIn: outline
-        }
-    }
-
-
-    component ModernSplitButton: Item {
-        id: mbtn
-        property string text
-        property string iconText
-        property bool isActive: false
-        property color accent: root.colFg
-        
-        signal mainClicked()
-        signal iconClicked()
-        signal rightIconClicked()
-        signal scrolled(int angle)
-        
-        Layout.fillWidth: true
-        Layout.preferredHeight: 40
-        
-        Rectangle {
-            anchors.fill: parent
-            radius: 12
-            color: mainMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.1)
-            border.color: "transparent"
-            Behavior on color { ColorAnimation { duration: root.batteryMode ? 0 : 150 } }
-        }
-        
-        MouseArea {
-            id: mainMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: mbtn.mainClicked()
-            onWheel: wheel => mbtn.scrolled(wheel.angleDelta.y)
-        }
-        
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 6
-            anchors.rightMargin: 12
-            spacing: 8
-            
-            // Icon Circle Box
-            Rectangle {
-                Layout.preferredWidth: 32
-                Layout.preferredHeight: 32
-                radius: 16
-                color: mbtn.isActive ? mbtn.accent : Qt.rgba(1, 1, 1, 0.15)
-                
-                Text {
-                    anchors.centerIn: parent
-                    text: mbtn.iconText
-                    color: mbtn.isActive ? "#ffffff" : root.colFg
-                    font.family: root.fontFamily
-                    font.pixelSize: 16
-                }
-                
-                MouseArea {
-                    id: iconMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: mbtn.iconClicked()
-                }
-                
-                scale: iconMouse.containsPress ? 0.9 : (iconMouse.containsMouse ? 1.05 : 1.0)
-                Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 150 } }
-                Behavior on color { ColorAnimation { duration: root.batteryMode ? 0 : 150 } }
-            }
-            
-            Text { 
-                text: mbtn.text
-                color: root.colFg
-                font.family: root.fontFamily
-                font.pixelSize: 14
-                font.bold: true
-                Layout.fillWidth: true
-            }
-            
-            Item {
-                Layout.preferredWidth: 32
-                Layout.preferredHeight: 32
-                
-                Text {
-                    anchors.centerIn: parent
-                    text: ""
-                    color: rightIconMouse.containsMouse ? root.colFg : Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.3)
-                    font.family: root.fontFamily
-                    font.pixelSize: 16
-                    Behavior on color { ColorAnimation { duration: root.batteryMode ? 0 : 150 } }
-                }
-                
-                MouseArea {
-                    id: rightIconMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: mbtn.rightIconClicked()
-                }
-            }
-        }
-        
-        scale: mainMouse.containsPress ? 0.98 : 1.0
-        Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 150; easing.type: Easing.OutBack } }
-    }
-
-    component ModernButton: MouseArea {
-        id: mbtn
-        property string text
-        property string iconText
-        property bool isActive: false
-        property color accent: root.colFg
-        
-        Layout.fillWidth: true
-        Layout.preferredHeight: 40
-        hoverEnabled: true
-        
-        Rectangle {
-            anchors.fill: parent
-            radius: 12
-            color: mbtn.isActive ? Qt.rgba(mbtn.accent.r, mbtn.accent.g, mbtn.accent.b, 0.15) 
-                                 : (mbtn.containsMouse ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.1))
-            border.color: mbtn.isActive ? Qt.rgba(mbtn.accent.r, mbtn.accent.g, mbtn.accent.b, 0.3) : "transparent"
-            border.width: 1
-            Behavior on color { ColorAnimation { duration: root.batteryMode ? 0 : 150 } }
-        }
-        
-        RowLayout {
-            anchors.centerIn: parent
-            spacing: 4
-            Text { text: mbtn.iconText; color: mbtn.isActive ? mbtn.accent : root.colFg; font.family: root.fontFamily; font.pixelSize: 14 }
-            Text { text: mbtn.text; color: mbtn.isActive ? mbtn.accent : root.colFg; font.family: root.fontFamily; font.pixelSize: 11; font.bold: true }
-        }
-        
-        scale: containsPress ? 0.95 : 1.0
-        Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 150; easing.type: Easing.OutBack } }
-    }
-
-    component ModernSlider: Slider {
-        id: mSlider
-        Layout.fillWidth: true
-        from: 0; to: 1.0
-        
-        background: Rectangle {
-            x: mSlider.leftPadding
-            y: mSlider.topPadding + mSlider.availableHeight / 2 - height / 2
-            implicitWidth: 200
-            implicitHeight: 8
-            width: mSlider.availableWidth
-            height: implicitHeight
-            radius: 4
-            color: Qt.rgba(1, 1, 1, 0.1)
-            Rectangle {
-                width: mSlider.visualPosition * parent.width
-                height: parent.height
-                color: root.colFg
-                radius: 4
-            }
-        }
-        
-        handle: Rectangle {
-            x: mSlider.leftPadding + mSlider.visualPosition * (mSlider.availableWidth - width)
-            y: mSlider.topPadding + mSlider.availableHeight / 2 - height / 2
-            implicitWidth: 16
-            implicitHeight: 16
-            radius: 8
-            color: mSlider.pressed ? Qt.rgba(0.8, 0.8, 0.8, 1) : "#ffffff"
-            scale: mSlider.pressed || mSlider.hovered ? 1.2 : 1.0
-            Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 100 } }
-            
-        }
-    }
-
-    PanelWindow {
+    // Centro de control (isla dinámica)
+    ControlCenter {
         id: controlCenter
-        
-        WlrLayershell.keyboardFocus: show ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-        
-        anchors {
-            top: true
-            left: true
-            right: true
-            bottom: true
-        }
-        
-        exclusionMode: ExclusionMode.Ignore
-        
-
-
-        property bool show: false
-        property real animHeight: animRect.height
-        
-
-
-        
-        // Fluid Animation Visibility Logic: Stay mapped until opacity is 0
-        visible: show || animRect.opacity > 0
-        
-        // Increased size
-        implicitWidth: 380
-        implicitHeight: mainLayout.implicitHeight + 48 + root.height + 8
-        color: "transparent"
-        
-        onShowChanged: {
-            if (show) focusTimerCc.start();
-        }
-        
-        Timer {
-            id: focusTimerCc
-            interval: 50
-            onTriggered: controlCenterContent.forceActiveFocus()
-        }
-
-        Item {
-            id: controlCenterContent
-            anchors.fill: parent
-            focus: true
-            Keys.onEscapePressed: {
-                controlCenter.show = false;
-                timerPopup.show = false;
-                notesPopup.show = false;
-            }
-            
-            MouseArea {
-                anchors.fill: parent
-                enabled: controlCenter.show
-                onClicked: {
-                    controlCenter.show = false;
-                    timerPopup.show = false;
-                    notesPopup.show = false;
-                }
-            }
-            
-            Rectangle {
-                id: animRect
-                anchors.top: parent.top
-                anchors.topMargin: controlCenter.show ? 16 : (root.isBarMode ? 0 : 4)
-                anchors.horizontalCenter: parent.horizontalCenter
-                
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                }
-                
-                width: controlCenter.show ? 380 : notchLayout.implicitWidth + 32
-                height: controlCenter.show ? (mainLayout.implicitHeight + 32) : 32
-                
-                color: Qt.rgba(0.02, 0.02, 0.02, 0.95)
-                radius: controlCenter.show ? 24 : (root.isBarMode ? 0 : 16)
-                border.color: Qt.rgba(1, 1, 1, 0.1)
-                border.width: (controlCenter.show || !root.isBarMode) ? 1 : 0
-                
-                // DYNAMIC ISLAND FLUID ANIMATION
-                opacity: (!controlCenter.show && height <= 36) ? 0.0 : 1.0
-                
-                Behavior on radius { 
-                    NumberAnimation { 
-                        duration: root.batteryMode ? 0 : controlCenter.show ? 450 : 300
-                        easing.type: controlCenter.show ? Easing.OutBack : Easing.OutExpo
-                        easing.overshoot: controlCenter.show ? 1.2 : 0 
-                    } 
-                }
-                
-                Behavior on width { 
-                    NumberAnimation { 
-                        duration: root.batteryMode ? 0 : controlCenter.show ? 450 : 300
-                        easing.type: controlCenter.show ? Easing.OutBack : Easing.OutExpo
-                        easing.overshoot: controlCenter.show ? 1.2 : 0 
-                    } 
-                }
-                Behavior on height { 
-                    NumberAnimation { 
-                        duration: root.batteryMode ? 0 : controlCenter.show ? 450 : 300
-                        easing.type: controlCenter.show ? Easing.OutBack : Easing.OutExpo
-                        easing.overshoot: controlCenter.show ? 1.2 : 0 
-                    } 
-                }
-                Behavior on anchors.topMargin { 
-                    NumberAnimation { 
-                        duration: root.batteryMode ? 0 : controlCenter.show ? 450 : 300
-                        easing.type: controlCenter.show ? Easing.OutBack : Easing.OutExpo
-                        easing.overshoot: controlCenter.show ? 1.2 : 0 
-                    } 
-                }
-                
-                Item {
-                    anchors.fill: parent
-                    anchors.margins: 16
-                    opacity: controlCenter.show ? 1.0 : 0.0
-                    Behavior on opacity { 
-                        NumberAnimation { 
-                            duration: root.batteryMode ? 0 : controlCenter.show ? 300 : 100
-                            easing.type: Easing.InOutQuad 
-                        } 
-                    }
-                    clip: true
-
-                    ColumnLayout {
-                        id: mainLayout
-                        anchors.top: parent.top
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        
-                    spacing: 8
-                    
-                    // Header: Clock & Date & Battery
-                    RowLayout {
-                        Layout.fillWidth: true
-                        
-                        ColumnLayout {
-                            spacing: 4
-                            Text {
-                                id: clockText
-                                color: root.colFg
-                                font.family: root.fontFamily
-                                font.pixelSize: 24
-                                font.bold: true
-                                text: Qt.formatDateTime(new Date(), "HH:mm")
-                                Timer {
-                                    interval: 1000; running: true; repeat: true
-                                    onTriggered: clockText.text = Qt.formatDateTime(new Date(), "HH:mm")
-                                }
-                            }
-                            Text {
-                                color: root.colMuted
-                                font.family: root.fontFamily
-                                font.pixelSize: 13
-                                text: Qt.formatDateTime(new Date(), "dddd, MMMM d")
-                            }
-                        }
-                        
-                        Item { Layout.fillWidth: true }
-                        
-                        // System Stats (Moved under clock)
-                        RowLayout {
-                            spacing: 8
-                            
-                            Text { text: " " + root.temperature + "°"; color: parseInt(root.temperature) >= 80 ? root.colCrit : root.colMuted; font.family: root.fontFamily; font.pixelSize: 12 }
-                            Text { text: "󰮯 " + root.updates; color: root.colMuted; font.family: root.fontFamily; font.pixelSize: 12; visible: parseInt(root.updates) > 0 }
-                        }
-                    
-                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.rgba(1,1,1,0.1) }
-                    
-                    // Spotify Media Player
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        visible: root.spotifyStatus !== "offline"
-                        
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Text { text: ""; color: "#1DB954"; font.family: root.fontFamily; font.pixelSize: 18 }
-                            Text {
-                                text: root.spotifyText
-                                color: root.colFg
-                                font.family: root.fontFamily
-                                font.pixelSize: 14
-                                font.bold: true
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
-                            }
-                        }
-                        
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-                            Item { Layout.fillWidth: true }
-                            ModernButton { Layout.preferredWidth: 48; Layout.preferredHeight: 40; iconText: "󰒮"; onClicked: { pSpotPrev.running = true } }
-                            ModernButton { Layout.preferredWidth: 64; Layout.preferredHeight: 40; iconText: root.spotifyStatus === "Playing" ? "󰏤" : "󰐊"; isActive: root.spotifyStatus === "Playing"; accent: "#1DB954"; onClicked: { pSpotPlay.running = true } }
-                            ModernButton { Layout.preferredWidth: 48; Layout.preferredHeight: 40; iconText: "󰒭"; onClicked: { pSpotNext.running = true } }
-                            Item { Layout.fillWidth: true }
-                        }
-                    }
-                    
-                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.rgba(1,1,1,0.1); visible: root.spotifyStatus !== "offline" }
-
-                    // Sliders
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        
-                        // Volume
-                        RowLayout {
-                            spacing: 8
-                            MouseArea {
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                hoverEnabled: true
-                                onClicked: pVolMute.running = true
-                                scale: containsPress ? 0.9 : (containsMouse ? 1.1 : 1.0)
-                                Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 150 } }
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: root.volumeMuted ? "󰝟" : ""
-                                    color: root.volumeMuted ? root.colMuted : root.colFg
-                                    font.family: root.fontFamily
-                                    font.pixelSize: 18 
-                                }
-                            }
-                            ModernSlider {
-                                value: parseInt(root.volumeOut) / 100.0
-                                onMoved: {
-                                    root.volumeOut = Math.round(value * 100) + "%"
-                                    pVolSet.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", value.toFixed(2)]
-                                    pVolSet.running = true
-                                }
-                            }
-                            
-                        }
-                        
-                        // Mic
-                        RowLayout {
-                            spacing: 8
-                            MouseArea {
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                hoverEnabled: true
-                                onClicked: pMicMute.running = true
-                                scale: containsPress ? 0.9 : (containsMouse ? 1.1 : 1.0)
-                                Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 150 } }
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: root.micMuted ? "" : ""
-                                    color: root.micMuted ? root.colMuted : root.colFg
-                                    font.family: root.fontFamily
-                                    font.pixelSize: 18 
-                                }
-                            }
-                            ModernSlider {
-                                value: parseInt(root.volumeMic) / 100.0
-                                onMoved: {
-                                    root.volumeMic = Math.round(value * 100) + "%"
-                                    pVolSet.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SOURCE@", value.toFixed(2)]
-                                    pVolSet.running = true
-                                }
-                            }
-                            
-                        }
-                        // Brightness
-                        RowLayout {
-                            spacing: 8
-                            visible: root.hasBacklight
-                            Text { text: "󰃠"; color: root.colFg; font.family: root.fontFamily; font.pixelSize: 18 }
-                            ModernSlider {
-                                value: parseInt(root.brightnessLevel) / 100.0
-                                onMoved: {
-                                    root.brightnessLevel = Math.round(value * 100) + "%"
-                                    pBrightSet.command = ["brightnessctl", "s", Math.round(value * 100) + "%"]
-                                    pBrightSet.running = true
-                                }
-                            }
-                            
-                        }
-
-                    }
-                    
-                    // Toggles Row 1
-                    RowLayout {
-                        spacing: 8
-                        Layout.fillWidth: true
-                        
-                        ModernSplitButton {
-                            text: "Bluetooth"
-                            iconText: root.bluetoothStatus === "on" ? "" : "󰂲"
-                            isActive: root.bluetoothStatus === "on"
-                            accent: "#007AFF"
-                            onMainClicked: { bluetoothMenuPopup.show = true; controlCenter.show = false }
-                            onRightIconClicked: { bluetoothMenuPopup.show = true; controlCenter.show = false }
-                            onIconClicked: { 
-                                root.bluetoothStatus = (root.bluetoothStatus === "on") ? "off" : "on"
-                                pBtToggle.running = true 
-                            }
-                        }
-                        
-                        ModernSplitButton {
-                            text: root.wifiText === "Disconnected" ? "Wi-Fi" : root.wifiText
-                            iconText: root.wifiIcon
-                            isActive: root.wifiText !== "Disconnected"
-                            accent: "#007AFF"
-                            onMainClicked: { wifiMenuPopup.show = true; controlCenter.show = false }
-                            onRightIconClicked: { wifiMenuPopup.show = true; controlCenter.show = false }
-                            onIconClicked: { 
-                                if (root.wifiText === "Ethernet") return;
-                                root.wifiText = (root.wifiText === "Disconnected") ? "Connecting..." : "Disconnected"
-                                root.wifiIcon = (root.wifiText === "Connecting...") ? "󰤨" : "󰤮"
-                                pWifiToggle.running = true 
-                            }
-                        }
-                    }
-                    
-                    // Toggles Row 3 (Timer and Stopwatch)
-                    RowLayout {
-                        spacing: 8
-                        Layout.fillWidth: true
-                        
-                        ModernSplitButton {
-                            text: root.stopwatchText
-                            iconText: "󱎫"
-                            isActive: root.stopwatchRunning || root.stopwatchSeconds > 0
-                            accent: "#FFA500"
-                            onMainClicked: {
-                                if (root.stopwatchRunning) {
-                                    root.stopwatchRunning = false;
-                                } else {
-                                    root.stopwatchRunning = true;
-                                }
-                            }
-                            onRightIconClicked: {
-                                if (root.stopwatchRunning) {
-                                    root.stopwatchRunning = false;
-                                } else {
-                                    root.stopwatchRunning = true;
-                                }
-                            }
-                            onIconClicked: { 
-                                root.stopwatchRunning = false;
-                                root.stopwatchSeconds = 0;
-                                root.stopwatchText = "00:00";
-                            }
-                        }
-                        
-                        ModernSplitButton {
-                            id: btnTimer
-                            text: root.timerText
-                            iconText: "󰔛"
-                            isActive: root.timerRunning || (root.timerSeconds > 0 && root.timerSeconds < root.timerTotal)
-                            accent: "#FFA500"
-                            onMainClicked: {
-                                root.pomodoroState = 0;
-                                if (root.timerRunning) {
-                                    root.timerRunning = false;
-                                } else if (root.timerSeconds > 0) {
-                                    root.timerRunning = true;
-                                } else {
-                                    root.timerSeconds = root.timerTotal;
-                                    root.timerText = root.formatTime(root.timerTotal);
-                                    root.timerRunning = true;
-                                }
-                            }
-                            onIconClicked: { 
-                                root.pomodoroState = 0;
-                                root.timerRunning = false;
-                                root.timerSeconds = 0;
-                                root.timerText = root.formatTime(root.timerTotal);
-                            }
-                            onRightIconClicked: {
-                                timerPopup.show = !timerPopup.show;
-                                notesPopup.show = false;
-                            }
-                            onScrolled: angle => {
-                                root.pomodoroState = 0;
-                                if (angle > 0) {
-                                    root.timerTotal += 60;
-                                } else if (angle < 0 && root.timerTotal >= 120) {
-                                    root.timerTotal -= 60;
-                                }
-                                root.timerRunning = false;
-                                root.timerSeconds = 0;
-                                root.timerText = root.formatTime(root.timerTotal);
-                            }
-                        }
-
-
-                    }
-
-                    // Toggles Row 2 (Configs, Timer)
-                    RowLayout {
-                        spacing: 8
-                        Layout.fillWidth: true
-                        
-                        ModernButton {
-                            id: btnNotes
-                            text: ""
-                            iconText: ""
-                            onClicked: { notesPopup.show = !notesPopup.show; timerPopup.show = false }
-                        }
-                        ModernButton {
-                            id: btnPomodoro
-                            text: ""
-                            iconText: "󰄉"
-                            isActive: root.pomodoroState > 0
-                            accent: root.pomodoroState === 1 ? "#FF4500" : "#00FA9A"
-                            onClicked: {
-                                if (root.pomodoroState === 0) {
-                                    root.pomodoroState = 1; // Start work
-                                    root.timerTotal = root.pomodoroWorkTotal;
-                                    root.timerSeconds = root.timerTotal;
-                                    root.timerText = root.formatTime(root.timerTotal);
-                                    root.timerRunning = true;
-                                } else {
-                                    root.pomodoroState = 0; // Turn off
-                                    root.timerRunning = false;
-                                    root.timerSeconds = 0;
-                                    root.timerTotal = 300; // Reset to 5m
-                                    root.timerText = root.formatTime(root.timerTotal);
-                                }
-                            }
-                        }
-                    }
-
-                    } // End Item wrapper
-            }
-        }
-    }
-}
-
-    PopupWindow {
-        id: timerPopup
-        grabFocus: show
-        anchor {
-            window: controlCenter
-            rect: Qt.rect(btnTimer.mapToItem(null, 0, 0).x, btnTimer.mapToItem(null, 0, 0).y, btnTimer.width, btnTimer.height)
-            edges: Edges.Left | Edges.Top
-            gravity: Edges.Left | Edges.Bottom
-        }
-        
-        property bool show: false
-        onShowChanged: {
-            if (show) {
-                timerInput.text = "";
-                timerInput.forceActiveFocus();
-            }
-        }
-        property real animHeight: animRectTimer.height
-        visible: show || animRectTimer.opacity > 0
-        
-        implicitWidth: 200
-        implicitHeight: layoutTimer.implicitHeight + 32
-        color: "transparent"
-        
-        Item {
-            anchors.fill: parent
-            
-            Rectangle {
-                id: animRectTimer
-                anchors.fill: parent
-                
-                anchors.rightMargin: 12
-                
-                color: Qt.rgba(0.08, 0.08, 0.08, 0.95)
-                radius: 16
-                border.color: Qt.rgba(1, 1, 1, 0.1)
-                border.width: 1
-                
-                opacity: timerPopup.show ? 1.0 : 0.0
-                scale: timerPopup.show ? 1.0 : 0.95
-                x: timerPopup.show ? 0 : 20
-                Behavior on opacity { NumberAnimation { duration: root.batteryMode ? 0 : 200 } }
-                Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 350; easing.type: Easing.OutBack } }
-                Behavior on x { NumberAnimation { duration: root.batteryMode ? 0 : 350; easing.type: Easing.OutBack } }
-                
-                ColumnLayout {
-                    id: layoutTimer
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.margins: 16
-                    spacing: 8
-                    Text { text: "Timer Minutes"; color: Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.5); font.family: root.fontFamily; font.pixelSize: 12 }
-                    
-                    TextField {
-                        id: timerInput
-                        Layout.fillWidth: true
-                        placeholderText: "e.g. 5"
-                        color: root.colFg
-                        background: Rectangle {
-                            color: Qt.rgba(1, 1, 1, 0.1)
-                            radius: 8
-                            border.color: timerInput.activeFocus ? Qt.rgba(1, 1, 1, 0.3) : "transparent"
-                        }
-                        font.family: root.fontFamily
-                        font.pixelSize: 14
-                        onAccepted: {
-                            let val = parseInt(text);
-                            if (!isNaN(val) && val > 0) {
-                                root.pomodoroState = 0;
-                                root.timerTotal = val * 60;
-                                root.timerSeconds = 0;
-                                root.timerText = root.formatTime(root.timerTotal);
-                                root.timerRunning = false;
-                            }
-                            timerPopup.show = false;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    PopupWindow {
-        id: notesPopup
-        anchor {
-            window: controlCenter
-            rect: Qt.rect(btnNotes.mapToItem(null, 0, 0).x, btnNotes.mapToItem(null, 0, 0).y, btnNotes.width, btnNotes.height)
-            edges: Edges.Left | Edges.Top
-            gravity: Edges.Left | Edges.Bottom
-        }
-        
-        property bool show: false
-        property real animHeight: animRect.height
-        visible: show || animRectNotes.opacity > 0
-        
-        implicitWidth: 340
-        implicitHeight: layoutNotes.implicitHeight + 32
-        color: "transparent"
-        
-        Item {
-            anchors.fill: parent
-            
-            Rectangle {
-                id: animRectNotes
-                anchors.fill: parent
-                
-                anchors.rightMargin: 12
-                
-                color: Qt.rgba(0.08, 0.08, 0.08, 0.95)
-                radius: 16
-                border.color: Qt.rgba(1, 1, 1, 0.1)
-                border.width: 1
-                
-                opacity: notesPopup.show ? 1.0 : 0.0
-                scale: notesPopup.show ? 1.0 : 0.95
-                x: notesPopup.show ? 0 : 20
-                Behavior on opacity { NumberAnimation { duration: root.batteryMode ? 0 : 200 } }
-                Behavior on scale { NumberAnimation { duration: root.batteryMode ? 0 : 350; easing.type: Easing.OutBack } }
-                Behavior on x { NumberAnimation { duration: root.batteryMode ? 0 : 350; easing.type: Easing.OutBack } }
-                
-                ColumnLayout {
-                    id: layoutNotes
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.margins: 16
-                    spacing: 8
-                    
-                    
-                    
-                    GridLayout {
-                        Layout.fillWidth: true
-                        columns: 2
-                        rowSpacing: 8
-                        columnSpacing: 8
-                        
-                        ModernButton { Layout.preferredHeight: 40; text: "Hyprland"; onClicked: { pNoteHyprland.running = true; notesPopup.show = false; controlCenter.show = false } }
-                        ModernButton { Layout.preferredHeight: 40; text: "Tofi"; onClicked: { pNoteTofi.running = true; notesPopup.show = false; controlCenter.show = false } }
-                        ModernButton { Layout.preferredHeight: 40; text: "Kitty"; onClicked: { pNoteKitty.running = true; notesPopup.show = false; controlCenter.show = false } }
-                        ModernButton { Layout.preferredHeight: 40; text: "Foot"; onClicked: { pNoteFoot.running = true; notesPopup.show = false; controlCenter.show = false } }
-                        ModernButton { Layout.preferredHeight: 40; text: "Ghostty"; onClicked: { pNoteGhostty.running = true; notesPopup.show = false; controlCenter.show = false } }
-                        ModernButton { Layout.preferredHeight: 40; text: "Fish"; onClicked: { pNoteFish.running = true; notesPopup.show = false; controlCenter.show = false } }
-                        ModernButton { Layout.preferredHeight: 40; text: "Fastfetch"; onClicked: { pNoteFastfetch.running = true; notesPopup.show = false; controlCenter.show = false } }
-                        ModernButton { Layout.preferredHeight: 40; text: "Quickshell"; onClicked: { pNoteQuickshell.running = true; notesPopup.show = false; controlCenter.show = false } }
-                    }
-                }
-            }
-        }
+        shellRoot: root
     }
 
     PowerMenu {
@@ -1281,7 +496,30 @@ ShellRoot {
         id: bluetoothMenuPopup
         shellRoot: root
     }
-    
+
+    // Referencias para el centro de control. Los `id` no son accesibles
+    // desde otro documento QML (ControlCenter.qml) vía `shellRoot`, solo
+    // las propiedades declaradas. Por eso exponemos alias de los procesos
+    // y popups que el ControlCenter necesita manipular.
+    property alias ccVolMute: pVolMute
+    property alias ccVolSet: pVolSet
+    property alias ccMicMute: pMicMute
+    property alias ccMicSet: pMicSet
+    property alias ccBrightSet: pBrightSet
+    property alias ccWifiToggle: pWifiToggle
+    property alias ccBtToggle: pBtToggle
+    property alias ccEthToggle: pEthToggle
+    property alias ccAudioSet: pAudioSet
+    property alias ccMediaPrev: pMediaPrev
+    property alias ccMediaPlay: pMediaPlay
+    property alias ccMediaNext: pMediaNext
+    property alias ccWifiMenu: wifiMenuPopup
+    property alias ccBluetoothMenu: bluetoothMenuPopup
+    property alias ccAppLauncher: appLauncherPopup
+    property alias ccClipboard: clipboardManagerPopup
+    property alias ccTheme: themeSwitcherPopup
+    property alias ccPower: powerMenuPopup
+
     IpcHandler {
         id: qsIpc
         target: "qsIpc"
